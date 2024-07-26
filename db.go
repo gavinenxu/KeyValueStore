@@ -64,9 +64,10 @@ func (db *DB) Put(key []byte, value []byte) error {
 
 	// construct logRecord
 	logRecord := &storage.LogRecord{
-		Key:   encodeLogRecordKeyWithSequenceNumber(key, nonTransactionSequenceNumber),
-		Value: value,
-		Type:  storage.LogRecordNormal,
+		Key:            key,
+		Value:          value,
+		Type:           storage.LogRecordNormal,
+		SequenceNumber: nonTransactionSequenceNumber,
 	}
 
 	// 1. append log record on disk if got inactive file
@@ -107,8 +108,9 @@ func (db *DB) Delete(key []byte) error {
 	}
 
 	logRecord := &storage.LogRecord{
-		Key:  encodeLogRecordKeyWithSequenceNumber(key, nonTransactionSequenceNumber),
-		Type: storage.LogRecordDeleted,
+		Key:            key,
+		Type:           storage.LogRecordDeleted,
+		SequenceNumber: nonTransactionSequenceNumber,
 	}
 
 	// write to storage file
@@ -186,7 +188,7 @@ func (db *DB) Sync() error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	if err := db.activeFile.SyncLogRecords(); err != nil {
+	if err := db.activeFile.Sync(); err != nil {
 		return err
 	}
 
@@ -215,7 +217,7 @@ func (db *DB) appendLogRecord(logRecord *storage.LogRecord) (*storage.LogRecordP
 	encodeLogRecord, size := storage.EncodeLogRecord(logRecord)
 	// check size if beyond limit, then flush to disk
 	if db.activeFile.WriteOffset+size > db.config.DataFileSize {
-		if err := db.activeFile.SyncLogRecords(); err != nil {
+		if err := db.activeFile.Sync(); err != nil {
 			return nil, err
 		}
 
@@ -229,13 +231,13 @@ func (db *DB) appendLogRecord(logRecord *storage.LogRecord) (*storage.LogRecordP
 	}
 
 	writeOffset := db.activeFile.WriteOffset
-	if err := db.activeFile.WriteLogRecord(encodeLogRecord); err != nil {
+	if err := db.activeFile.Write(encodeLogRecord); err != nil {
 		return nil, err
 	}
 
 	// check if you need to flush to db based on configuration
 	if db.config.SyncWrites {
-		if err := db.activeFile.SyncLogRecords(); err != nil {
+		if err := db.activeFile.Sync(); err != nil {
 			return nil, err
 		}
 	}
@@ -314,7 +316,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 	}
 
 	// store the whole log record for a transaction
-	var transactionLogRecordMap = make(map[uint64][]*storage.TransactionLogRecord)
+	var transactionLogRecordMap = make(map[uint64][]*storage.LogRecordPositionPair)
 	var currentSequenceNumber = nonTransactionSequenceNumber
 
 	// traverse file id to get file content
@@ -338,38 +340,35 @@ func (db *DB) loadIndexFromDataFiles() error {
 				return err
 			}
 
-			sequenceNumber, key := decodeLogRecordKeyWithSequenceNumber(logRecord.Key)
 			logRecordPos := &storage.LogRecordPos{
 				Fid:    dataFile.FileId,
 				Offset: offset,
 			}
 
-			// update the transaction encoded key to real key
-			logRecord.Key = key
-
-			if sequenceNumber == nonTransactionSequenceNumber {
+			if logRecord.SequenceNumber == nonTransactionSequenceNumber {
 				if err = db.updateLogRecordIndex(logRecord, logRecordPos); err != nil {
 					return err
 				}
 			} else {
 				if logRecord.Type == storage.LogRecordTransactionFinished {
 					// if we encounter transaction finish tag, update index at a time
-					for _, transactionLogRecord := range transactionLogRecordMap[sequenceNumber] {
+					for _, transactionLogRecord := range transactionLogRecordMap[logRecord.SequenceNumber] {
 						if err = db.updateLogRecordIndex(transactionLogRecord.Record, transactionLogRecord.Pos); err != nil {
 							return err
 						}
-						delete(transactionLogRecordMap, sequenceNumber)
+						delete(transactionLogRecordMap, logRecord.SequenceNumber)
 					}
 				} else {
-					transactionLogRecordMap[sequenceNumber] = append(transactionLogRecordMap[sequenceNumber], &storage.TransactionLogRecord{
-						Record: logRecord,
-						Pos:    logRecordPos,
-					})
+					transactionLogRecordMap[logRecord.SequenceNumber] =
+						append(transactionLogRecordMap[logRecord.SequenceNumber], &storage.LogRecordPositionPair{
+							Record: logRecord,
+							Pos:    logRecordPos,
+						})
 				}
 			}
 
-			if sequenceNumber > currentSequenceNumber {
-				currentSequenceNumber = sequenceNumber
+			if logRecord.SequenceNumber > currentSequenceNumber {
+				currentSequenceNumber = logRecord.SequenceNumber
 			}
 
 			offset += size

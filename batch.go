@@ -2,7 +2,6 @@ package bitcask_go
 
 import (
 	"bitcask-go/storage"
-	"encoding/binary"
 	"sync"
 	"sync/atomic"
 )
@@ -30,6 +29,10 @@ func (batch *WriteBatch) Put(key, value []byte) error {
 
 	batch.mu.Lock()
 	defer batch.mu.Unlock()
+
+	if len(batch.pendingWrites) == batch.config.MaxBatchSize {
+		return ErrExceedMaxBatchSize
+	}
 
 	batch.pendingWrites[string(key)] = &storage.LogRecord{
 		Key:   key,
@@ -75,15 +78,17 @@ func (batch *WriteBatch) Commit() error {
 	defer batch.db.mu.Unlock()
 
 	// Generate global transaction sequence number
-	sequenceNumber := atomic.AddUint64(&batch.db.sequenceNumber, 1)
+	sequenceNumber := batch.generateGlobalIncrementSequenceNumber()
 
+	// For the same key, we only take the last Position, so it could be overwritten
 	positionMap := make(map[string]*storage.LogRecordPos)
 
 	for _, logRecord := range batch.pendingWrites {
 		pos, err := batch.db.appendLogRecord(&storage.LogRecord{
-			Key:   encodeLogRecordKeyWithSequenceNumber(logRecord.Key, sequenceNumber),
-			Value: logRecord.Value,
-			Type:  logRecord.Type,
+			Key:            logRecord.Key,
+			Value:          logRecord.Value,
+			Type:           logRecord.Type,
+			SequenceNumber: sequenceNumber,
 		})
 
 		if err != nil {
@@ -95,8 +100,9 @@ func (batch *WriteBatch) Commit() error {
 
 	// append finish key
 	_, err := batch.db.appendLogRecord(&storage.LogRecord{
-		Key:  encodeLogRecordKeyWithSequenceNumber(transactionFinishKey, sequenceNumber),
-		Type: storage.LogRecordTransactionFinished,
+		Key:            transactionFinishKey,
+		Type:           storage.LogRecordTransactionFinished,
+		SequenceNumber: sequenceNumber,
 	})
 	if err != nil {
 		return err
@@ -104,7 +110,7 @@ func (batch *WriteBatch) Commit() error {
 
 	// sync data
 	if batch.config.SyncWrites && batch.db.activeFile != nil {
-		if err = batch.db.activeFile.SyncLogRecords(); err != nil {
+		if err = batch.db.activeFile.Sync(); err != nil {
 			return err
 		}
 	}
@@ -141,20 +147,6 @@ func (batch *WriteBatch) Commit() error {
 //
 //}
 
-// generate sequenceNumber+key byte
-func encodeLogRecordKeyWithSequenceNumber(key []byte, sequenceNumber uint64) []byte {
-	sequence := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutUvarint(sequence, sequenceNumber)
-
-	encodedKey := make([]byte, n+len(key))
-	copy(encodedKey[:n], sequence[:n])
-	copy(encodedKey[n:], key)
-	return encodedKey
-}
-
-// decode sequenceNumber+key
-func decodeLogRecordKeyWithSequenceNumber(encodedKey []byte) (uint64, []byte) {
-	sequenceNumber, n := binary.Uvarint(encodedKey)
-	key := encodedKey[n:]
-	return sequenceNumber, key
+func (batch *WriteBatch) generateGlobalIncrementSequenceNumber() uint64 {
+	return atomic.AddUint64(&batch.db.sequenceNumber, 1)
 }
