@@ -8,7 +8,7 @@ import (
 )
 
 func TestBTree_Get_NilKey(t *testing.T) {
-	bt := NewBTree(32)
+	bt := NewBTree(DefaultDegree)
 
 	bt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
 	pos := bt.Get(nil)
@@ -17,7 +17,7 @@ func TestBTree_Get_NilKey(t *testing.T) {
 }
 
 func TestBTree_Get_NormalKey(t *testing.T) {
-	bt := NewBTree(32)
+	bt := NewBTree(DefaultDegree)
 
 	bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
 	pos := bt.Get([]byte("123"))
@@ -26,7 +26,7 @@ func TestBTree_Get_NormalKey(t *testing.T) {
 }
 
 func TestBTree_Get_NormalKey_UpdatePosition(t *testing.T) {
-	bt := NewBTree(32)
+	bt := NewBTree(DefaultDegree)
 
 	bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
 	bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 2, Offset: 20})
@@ -37,21 +37,21 @@ func TestBTree_Get_NormalKey_UpdatePosition(t *testing.T) {
 }
 
 func TestBTree_Put_NilKey(t *testing.T) {
-	bt := NewBTree(32)
+	bt := NewBTree(DefaultDegree)
 
 	res := bt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
 	assert.True(t, res)
 }
 
 func TestBTree_Put_NormalKey(t *testing.T) {
-	bt := NewBTree(32)
+	bt := NewBTree(DefaultDegree)
 
 	res := bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
 	assert.True(t, res)
 }
 
 func TestBTree_Delete_NilKey(t *testing.T) {
-	bt := NewBTree(32)
+	bt := NewBTree(DefaultDegree)
 
 	res := bt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
 	assert.True(t, res)
@@ -61,7 +61,7 @@ func TestBTree_Delete_NilKey(t *testing.T) {
 }
 
 func TestBTree_Delete_NormalKey(t *testing.T) {
-	bt := NewBTree(32)
+	bt := NewBTree(DefaultDegree)
 
 	res := bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
 	assert.True(t, res)
@@ -71,7 +71,7 @@ func TestBTree_Delete_NormalKey(t *testing.T) {
 }
 
 func TestBTree_Iterator(t *testing.T) {
-	bt := NewBTree(32)
+	bt := NewBTree(DefaultDegree)
 	iter1 := bt.Iterator(false)
 	assert.False(t, iter1.Valid())
 
@@ -86,7 +86,7 @@ func TestBTree_Iterator(t *testing.T) {
 }
 
 func TestBTree_Iterator_TestIteration(t *testing.T) {
-	bt := NewBTree(32)
+	bt := NewBTree(DefaultDegree)
 
 	n := 3
 	keyArr := make([][]byte, n)
@@ -121,7 +121,7 @@ func TestBTree_Iterator_TestIteration(t *testing.T) {
 }
 
 func TestBTree_Iterator_TestSeek(t *testing.T) {
-	bt := NewBTree(32)
+	bt := NewBTree(DefaultDegree)
 
 	key1, value1 := []byte("aabb"), &storage.LogRecordPos{Fid: 1, Offset: 1}
 	key2, value2 := []byte("ccdd"), &storage.LogRecordPos{Fid: 1, Offset: 1}

@@ -12,7 +12,11 @@ var (
 	ErrInvalidCRC = errors.New("invalid CRC, log record might be corrupted")
 )
 
-const DataFileNameSuffix = ".data"
+const (
+	DataFileNameSuffix  = ".data"
+	HintFileName        = "hint-index"
+	MergeFinishFileName = "merge-finish"
+)
 
 type DataFile struct {
 	FileId      uint32
@@ -21,19 +25,18 @@ type DataFile struct {
 }
 
 func OpenDataFile(dirPath string, fileId uint32) (*DataFile, error) {
-	fileName := buildFileName(dirPath, fileId)
+	fileName := GetDataFileName(dirPath, fileId)
+	return newDataFile(fileName, fileId)
+}
 
-	// Construct IO Manager
-	ioManager, err := fio.NewIOManager(fileName)
-	if err != nil {
-		return nil, err
-	}
+func OpenHintFile(dirPath string) (*DataFile, error) {
+	fileName := GetHintFileName(dirPath)
+	return newDataFile(fileName, 0)
+}
 
-	return &DataFile{
-		FileId:      fileId,
-		WriteOffset: 0,
-		IOManager:   ioManager,
-	}, nil
+func OpenMergeFinishFile(dirPath string) (*DataFile, error) {
+	fileName := filepath.Join(dirPath, MergeFinishFileName)
+	return newDataFile(fileName, 0)
 }
 
 // ReadLogRecord read log record from read offset
@@ -103,8 +106,26 @@ func (df *DataFile) Close() error {
 	return df.IOManager.Close()
 }
 
-func buildFileName(dirPath string, fileId uint32) string {
+func GetDataFileName(dirPath string, fileId uint32) string {
 	return filepath.Join(dirPath, fmt.Sprintf("%09d", fileId)+DataFileNameSuffix)
+}
+
+func GetHintFileName(dirPath string) string {
+	return filepath.Join(dirPath, HintFileName)
+}
+
+func newDataFile(fileName string, fileId uint32) (*DataFile, error) {
+	// Construct IO Manager
+	ioManager, err := fio.NewIOManager(fileName)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DataFile{
+		FileId:      fileId,
+		WriteOffset: 0,
+		IOManager:   ioManager,
+	}, nil
 }
 
 func (df *DataFile) readNBytes(n int64, offset int64) ([]byte, error) {

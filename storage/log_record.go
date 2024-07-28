@@ -128,6 +128,26 @@ func getLogRecordCRC(logRecord *LogRecord, headerWithoutCRC []byte) uint32 {
 	return crc
 }
 
+func EncodeLogRecordPosition(pos *LogRecordPos) ([]byte, int) {
+	buf := make([]byte, binary.MaxVarintLen32+binary.MaxVarintLen64)
+	var index = 0
+	index += binary.PutVarint(buf[index:], int64(pos.Fid))
+	index += binary.PutVarint(buf[index:], pos.Offset)
+
+	return buf[:index], index
+}
+
+func DecodeLogRecordPosition(buf []byte) (*LogRecordPos, int) {
+	var index = 0
+	fid, n := binary.Varint(buf[index:])
+	index += n
+
+	offset, n := binary.Varint(buf[index:])
+	index += n
+
+	return &LogRecordPos{Fid: uint32(fid), Offset: offset}, index
+}
+
 // minBytesNeededForSequenceNumber set at least 1 byte, even if the sequence number is 0
 func minBytesNeededForSequenceNumber(sequenceNumber uint64) int {
 	return max(1, minBytesNeeded(sequenceNumber))

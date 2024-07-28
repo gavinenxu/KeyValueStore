@@ -9,6 +9,10 @@ import (
 	"github.com/google/btree"
 )
 
+const (
+	DefaultDegree = 32
+)
+
 // BTree Wrapper for Google btree
 type BTree struct {
 	tree *btree.BTree

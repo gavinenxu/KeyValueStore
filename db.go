@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ type DB struct {
 	index          index.Indexer
 	fileIds        []int  // only use for loading index
 	sequenceNumber uint64 // transaction number, increment by 1
+	isMerging      bool   // use for merging files
 }
 
 func OpenDatabase(config Config) (*DB, error) {
@@ -43,8 +45,18 @@ func OpenDatabase(config Config) (*DB, error) {
 		index:         index.NewIndexer(config.IndexerType),
 	}
 
+	// load merge file
+	if err := db.loadMergeFile(); err != nil {
+		return nil, err
+	}
+
 	// load storage file
 	if err := db.loadDataFiles(); err != nil {
+		return nil, err
+	}
+
+	// load hint file
+	if err := db.loadHintFile(); err != nil {
 		return nil, err
 	}
 
@@ -252,7 +264,7 @@ func (db *DB) appendLogRecord(logRecord *storage.LogRecord) (*storage.LogRecordP
 
 // set current storage file, must set mutex lock
 func (db *DB) setActiveDataFile() error {
-	var initialFileId uint32 = 1
+	var initialFileId uint32 = initialDataFileId
 	if db.activeFile != nil {
 		// file id will be like 001, 002, 003, so we add by 1 each time from prev file number
 		initialFileId = db.activeFile.FileId + 1
@@ -319,10 +331,25 @@ func (db *DB) loadIndexFromDataFiles() error {
 	var transactionLogRecordMap = make(map[uint64][]*storage.LogRecordPositionPair)
 	var currentSequenceNumber = nonTransactionSequenceNumber
 
+	finishMergeFileName := path.Join(db.config.DirPath, storage.MergeFinishFileName)
+	var nonMergedFileId uint32 = 0
+	if _, err := os.Stat(finishMergeFileName); err == nil {
+		fileId, err := getNonMergedFileId(db.config.DirPath)
+		if err != nil {
+			return err
+		}
+		nonMergedFileId = fileId
+	}
+
 	// traverse file id to get file content
 	for i, fid := range db.fileIds {
 		var dataFile *storage.DataFile
 		var fileId = uint32(fid)
+
+		if fileId < nonMergedFileId {
+			continue
+		}
+
 		if fileId == db.activeFile.FileId {
 			dataFile = db.activeFile
 		} else {

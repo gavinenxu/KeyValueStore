@@ -27,7 +27,7 @@ const (
 func NewIndexer(typ IndexerType) Indexer {
 	switch typ {
 	case BTreeIndexType:
-		return NewBTree(32) // todo set degree for btree
+		return NewBTree(DefaultDegree) // todo set degree for btree
 	case ARTIndexType:
 		return nil
 	default:
