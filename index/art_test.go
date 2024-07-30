@@ -2,61 +2,66 @@ package index
 
 import (
 	"bitcask-go/storage"
-	"testing"
-
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
-func TestBTree_Get_NilKey(t *testing.T) {
-	bt := NewBTree(DefaultDegree)
+func TestAdaptiveRadixTree_Get_NilKey(t *testing.T) {
+	bt := NewAdaptiveRadixTree()
 
 	res := bt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
 	assert.False(t, res)
 
 	pos := bt.Get(nil)
 	assert.Nil(t, pos)
+	assert.Equal(t, 0, bt.Size())
 }
 
-func TestBTree_Get_NormalKey(t *testing.T) {
-	bt := NewBTree(DefaultDegree)
+func TestAdaptiveRadixTree_Get_NormalKey(t *testing.T) {
+	bt := NewAdaptiveRadixTree()
 
 	bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
 	pos := bt.Get([]byte("123"))
 	assert.Equal(t, uint32(1), pos.Fid)
 	assert.Equal(t, int64(10), pos.Offset)
+	assert.Equal(t, 1, bt.Size())
 }
 
-func TestBTree_Get_NormalKey_UpdatePosition(t *testing.T) {
-	bt := NewBTree(DefaultDegree)
+func TestAdaptiveRadixTree_Get_NormalKey_UpdatePosition(t *testing.T) {
+	bt := NewAdaptiveRadixTree()
 
 	bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
 	pos := bt.Get([]byte("123"))
 	assert.Equal(t, uint32(1), pos.Fid)
 	assert.Equal(t, int64(10), pos.Offset)
+	assert.Equal(t, 1, bt.Size())
 
 	bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 2, Offset: 20})
 
 	pos = bt.Get([]byte("123"))
 	assert.Equal(t, uint32(2), pos.Fid)
 	assert.Equal(t, int64(20), pos.Offset)
+	assert.Equal(t, 1, bt.Size())
 }
 
-func TestBTree_Put_NilKey(t *testing.T) {
-	bt := NewBTree(DefaultDegree)
+func TestAdaptiveRadixTree_Put_NilKey(t *testing.T) {
+	bt := NewAdaptiveRadixTree()
 
 	res := bt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
 	assert.False(t, res)
+	assert.Equal(t, 0, bt.Size())
 }
 
-func TestBTree_Put_NormalKey(t *testing.T) {
-	bt := NewBTree(DefaultDegree)
+func TestAdaptiveRadixTree_Put_NormalKey(t *testing.T) {
+	bt := NewAdaptiveRadixTree()
 
 	res := bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
 	assert.True(t, res)
+	assert.Equal(t, 1, bt.Size())
 }
 
-func TestBTree_Delete_NilKey(t *testing.T) {
-	bt := NewBTree(DefaultDegree)
+func TestAdaptiveRadixTree_Delete_NilKey(t *testing.T) {
+	bt := NewAdaptiveRadixTree()
 
 	res := bt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
 	assert.False(t, res)
@@ -64,20 +69,22 @@ func TestBTree_Delete_NilKey(t *testing.T) {
 
 	res = bt.Delete(nil)
 	assert.False(t, res)
+	assert.Equal(t, 0, bt.Size())
 }
 
-func TestBTree_Delete_NormalKey(t *testing.T) {
-	bt := NewBTree(DefaultDegree)
+func TestAdaptiveRadixTree_Delete_NormalKey(t *testing.T) {
+	bt := NewAdaptiveRadixTree()
 
 	res := bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
 	assert.True(t, res)
 
 	res = bt.Delete([]byte("123"))
 	assert.True(t, res)
+	assert.Equal(t, 0, bt.Size())
 }
 
-func TestBTree_Iterator(t *testing.T) {
-	bt := NewBTree(DefaultDegree)
+func TestAdaptiveRadixTree_Iterator(t *testing.T) {
+	bt := NewAdaptiveRadixTree()
 	iter1 := bt.Iterator(false)
 	assert.False(t, iter1.Valid())
 
@@ -91,8 +98,8 @@ func TestBTree_Iterator(t *testing.T) {
 	assert.False(t, iter2.Valid())
 }
 
-func TestBTree_Iterator_TestIteration(t *testing.T) {
-	bt := NewBTree(DefaultDegree)
+func TestAdaptiveRadixTree_Iterator_TestIteration(t *testing.T) {
+	bt := NewAdaptiveRadixTree()
 
 	n := 3
 	keyArr := make([][]byte, n)
@@ -126,8 +133,8 @@ func TestBTree_Iterator_TestIteration(t *testing.T) {
 	}
 }
 
-func TestBTree_Iterator_TestSeek(t *testing.T) {
-	bt := NewBTree(DefaultDegree)
+func TestAdaptiveRadixTree_Iterator_TestSeek(t *testing.T) {
+	bt := NewAdaptiveRadixTree()
 
 	key1, value1 := []byte("aabb"), &storage.LogRecordPos{Fid: 1, Offset: 1}
 	key2, value2 := []byte("ccdd"), &storage.LogRecordPos{Fid: 1, Offset: 1}

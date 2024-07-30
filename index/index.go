@@ -4,6 +4,7 @@ import (
 	"bitcask-go/storage"
 )
 
+// Indexer Key can't be nil
 type Indexer interface {
 	// Get index position on disk
 	Get(key []byte) *storage.LogRecordPos
@@ -57,4 +58,10 @@ type Iterator interface {
 
 	// Close iterator, free resource
 	Close()
+}
+
+// Item To define the shape of value we store, could be used for wrapping iterator
+type Item struct {
+	key []byte
+	pos *storage.LogRecordPos
 }

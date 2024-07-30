@@ -28,9 +28,15 @@ func NewBTree(degree int) *BTree {
 }
 
 func (bt *BTree) Get(key []byte) *storage.LogRecordPos {
+	if key == nil {
+		return nil
+	}
+
 	item := &Item{key: key}
 
+	bt.mu.RLock()
 	btreeItem := bt.tree.Get(item)
+	bt.mu.RUnlock()
 	if btreeItem == nil {
 		return nil
 	}
@@ -39,6 +45,10 @@ func (bt *BTree) Get(key []byte) *storage.LogRecordPos {
 }
 
 func (bt *BTree) Put(key []byte, pos *storage.LogRecordPos) bool {
+	if key == nil {
+		return false
+	}
+
 	item := &Item{key: key, pos: pos}
 
 	bt.mu.Lock()
@@ -49,6 +59,10 @@ func (bt *BTree) Put(key []byte, pos *storage.LogRecordPos) bool {
 }
 
 func (bt *BTree) Delete(key []byte) bool {
+	if key == nil {
+		return false
+	}
+
 	item := &Item{key: key}
 
 	bt.mu.Lock()
@@ -73,15 +87,12 @@ func (bt *BTree) Iterator(reverse bool) Iterator {
 }
 
 func (bt *BTree) Size() int {
+	bt.mu.RLock()
+	defer bt.mu.RUnlock()
 	return bt.tree.Len()
 }
 
-// Item To define BTreeItem locally, so we could implement Less function
-type Item struct {
-	key []byte
-	pos *storage.LogRecordPos
-}
-
+// Less To implement Less interface in Btree lib
 func (item *Item) Less(than btree.Item) bool {
 	return bytes.Compare(item.key, than.(*Item).key) == -1
 }
