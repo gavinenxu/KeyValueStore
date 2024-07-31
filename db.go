@@ -22,6 +22,9 @@ type DB struct {
 	fileIds        []int  // only use for loading index
 	sequenceNumber uint64 // transaction number, increment by 1
 	isMerging      bool   // use for merging files
+
+	sequenceNumberFileExist bool
+	isInitial               bool
 }
 
 func OpenDatabase(config Config) (*DB, error) {
@@ -29,12 +32,21 @@ func OpenDatabase(config Config) (*DB, error) {
 		return nil, err
 	}
 
+	var isInitial bool
 	// check if dir path exist
 	if _, err := os.Stat(config.DirPath); os.IsNotExist(err) {
+		isInitial = true
 		// create dir path for user
 		if err = os.Mkdir(config.DirPath, os.ModePerm); err != nil {
 			return nil, err
 		}
+	}
+	entries, err := os.ReadDir(config.DirPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		isInitial = true
 	}
 
 	// init db instance
@@ -42,7 +54,8 @@ func OpenDatabase(config Config) (*DB, error) {
 		config:        config,
 		mu:            new(sync.RWMutex),
 		inactiveFiles: make(map[uint32]*storage.DataFile),
-		index:         index.NewIndexer(config.IndexerType),
+		index:         index.NewIndexer(config.IndexerType, config.DirPath, config.SyncWrites),
+		isInitial:     isInitial,
 	}
 
 	// load merge file
@@ -55,14 +68,28 @@ func OpenDatabase(config Config) (*DB, error) {
 		return nil, err
 	}
 
-	// load hint file
-	if err := db.loadHintFile(); err != nil {
-		return nil, err
-	}
+	if db.config.IndexerType != index.BPlusTreeIndexType {
+		// load hint file
+		if err := db.loadHintFile(); err != nil {
+			return nil, err
+		}
 
-	// load index for log records
-	if err := db.loadIndexFromDataFiles(); err != nil {
-		return nil, err
+		// load index for log records
+		if err := db.loadIndexFromDataFiles(); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := db.loadSequenceNumberFile(); err != nil {
+			return nil, err
+		}
+		// update write offset for bplus tree
+		if db.activeFile != nil {
+			size, err := db.activeFile.IOManager.Size()
+			if err != nil {
+				return nil, err
+			}
+			db.activeFile.WriteOffset = size
+		}
 	}
 
 	return db, nil
@@ -142,6 +169,7 @@ func (db *DB) Delete(key []byte) error {
 func (db *DB) ListKeys() [][]byte {
 	keys := make([][]byte, db.index.Size())
 	iter := db.index.Iterator(false)
+	defer iter.Close()
 	var idx int
 	for iter.Rewind(); iter.Valid(); iter.Next() {
 		keys[idx] = iter.Key()
@@ -156,6 +184,7 @@ func (db *DB) Fold(fn func(k []byte, v []byte) bool) error {
 	defer db.mu.RUnlock()
 
 	iter := db.index.Iterator(false)
+	defer iter.Close()
 	for iter.Rewind(); iter.Valid(); iter.Next() {
 		value, err := db.getValueByLogPosition(iter.Value())
 		if err != nil {
@@ -177,6 +206,14 @@ func (db *DB) Close() error {
 
 	db.mu.Lock()
 	defer db.mu.Unlock()
+
+	if err := db.index.Close(); err != nil {
+		return err
+	}
+
+	if err := db.writeSequenceNumber(); err != nil {
+		return err
+	}
 
 	if err := db.activeFile.Close(); err != nil {
 		return err
@@ -279,6 +316,7 @@ func (db *DB) setActiveDataFile() error {
 	return nil
 }
 
+// open data files
 func (db *DB) loadDataFiles() error {
 	dirEntries, err := os.ReadDir(db.config.DirPath)
 	if err != nil {
@@ -321,6 +359,8 @@ func (db *DB) loadDataFiles() error {
 	return nil
 }
 
+// traverse all the log records and put the log position in index
+// also get current sequence number and write offset for active file
 func (db *DB) loadIndexFromDataFiles() error {
 	// database is empty
 	if len(db.fileIds) == 0 {
@@ -377,6 +417,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 					return err
 				}
 			} else {
+				// To update a transaction as a whole, keep atomicity
 				if logRecord.Type == storage.LogRecordTransactionFinished {
 					// if we encounter transaction finish tag, update index at a time
 					for _, transactionLogRecord := range transactionLogRecordMap[logRecord.SequenceNumber] {
@@ -408,6 +449,59 @@ func (db *DB) loadIndexFromDataFiles() error {
 	}
 
 	db.sequenceNumber = currentSequenceNumber
+
+	return nil
+}
+
+// load sequence number for bplus tree index
+func (db *DB) loadSequenceNumberFile() error {
+	if db.config.IndexerType != index.BPlusTreeIndexType {
+		return nil
+	}
+
+	fileName := path.Join(db.config.DirPath, storage.SequenceNumberFileName)
+	if _, err := os.Stat(fileName); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	seqNoFile, err := storage.OpenSequenceNumberFile(db.config.DirPath)
+	if err != nil {
+		return err
+	}
+	seqNoLogRecord, _, err := seqNoFile.ReadLogRecord(0)
+	if err != nil {
+		return err
+	}
+	db.sequenceNumber = seqNoLogRecord.SequenceNumber
+	db.sequenceNumberFileExist = true
+
+	return err
+}
+
+func (db *DB) writeSequenceNumber() error {
+	if db.config.IndexerType != index.BPlusTreeIndexType {
+		return nil
+	}
+
+	// store sequence number in file
+	seqNoFile, err := storage.OpenSequenceNumberFile(db.config.DirPath)
+	if err != nil {
+		return err
+	}
+	seqNoLogRecord := &storage.LogRecord{
+		Key:            sequenceNumberKey,
+		Value:          nil,
+		Type:           storage.LogRecordNormal,
+		SequenceNumber: db.sequenceNumber,
+	}
+	encodedSeqNoBuf, _ := storage.EncodeLogRecord(seqNoLogRecord)
+
+	if err := seqNoFile.Write(encodedSeqNoBuf); err != nil {
+		return err
+	}
 
 	return nil
 }

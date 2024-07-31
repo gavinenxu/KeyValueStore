@@ -1,6 +1,7 @@
 package bitcask_go
 
 import (
+	"bitcask-go/index"
 	"bitcask-go/utils"
 	"github.com/stretchr/testify/assert"
 	"os"
@@ -57,6 +58,10 @@ func TestDB_PutGet_Normal(t *testing.T) {
 
 func TestDB_PutGet_WriteToNewFileWhileSizeMoreThanThreshold_ReadFromInactiveFile(t *testing.T) {
 	configs := DefaultConfig
+	if configs.IndexerType == index.BPlusTreeIndexType {
+		t.Skip("Skip BPlus Tree Index testing for large File/IO")
+	}
+
 	dir, _ := os.MkdirTemp("", "bitcask_test_put")
 	configs.DirPath = dir
 	configs.DataFileSize = 64 * 1024 // set 64 kb file
@@ -139,7 +144,7 @@ func TestDB_PutGet_RestartDatabase(t *testing.T) {
 	assert.Nil(t, err)
 
 	// close active file
-	err = database.activeFile.Close()
+	err = database.Close()
 	assert.Nil(t, err)
 
 	database, err = OpenDatabase(configs)

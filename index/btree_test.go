@@ -149,10 +149,15 @@ func TestBTree_Iterator_TestSeek(t *testing.T) {
 		}
 		i++
 	}
+	assert.Equal(t, 2, i)
 
+	i = 0
 	iter2 := bt.Iterator(true)
 	for iter2.Seek([]byte("cc")); iter2.Valid(); iter2.Next() {
+		t.Log(string(iter2.Key()))
 		assert.Equal(t, key1, iter2.Key())
 		assert.Equal(t, value1, iter2.Value())
+		i++
 	}
+	assert.Equal(t, 1, i)
 }

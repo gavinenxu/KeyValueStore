@@ -77,6 +77,10 @@ func (art *AdaptiveRadixTree) Size() int {
 	return art.tree.Size()
 }
 
+func (art *AdaptiveRadixTree) Close() error {
+	return nil
+}
+
 type ArtIterator struct {
 	currentIndex int
 	reverse      bool

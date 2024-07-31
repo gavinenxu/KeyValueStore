@@ -174,6 +174,7 @@ func TestIterator_MultipleRecords_Prefix(t *testing.T) {
 	assert.Equal(t, len(res), 2)
 	assert.Equal(t, res[0], []byte("abcd"))
 	assert.Equal(t, res[1], []byte("aefg"))
+	iter.Close()
 
 	// 2. match "b"
 	iterConfig.prefix = []byte("b")
@@ -189,6 +190,7 @@ func TestIterator_MultipleRecords_Prefix(t *testing.T) {
 	}
 	assert.Equal(t, len(res), 1)
 	assert.Equal(t, res[0], []byte("bxy"))
+	iter.Close()
 
 	// 3. match nothing
 	iterConfig.prefix = []byte("abcg")

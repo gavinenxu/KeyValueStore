@@ -29,7 +29,7 @@ var DefaultConfig = Config{
 	DirPath:      os.TempDir(),
 	DataFileSize: 64 * 1024 * 1024, // 64MB
 	SyncWrites:   false,
-	IndexerType:  index.BTreeIndexType,
+	IndexerType:  index.BPlusTreeIndexType,
 }
 
 var DefaultIteratorConfig = IteratorConfig{

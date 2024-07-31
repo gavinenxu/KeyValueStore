@@ -15,22 +15,25 @@ type Indexer interface {
 	// Iterator indexer iterator
 	Iterator(reverse bool) Iterator
 	Size() int
+	Close() error
 }
 
 type IndexerType = int8
 
 const (
 	BTreeIndexType IndexerType = iota + 1 // BTree index type enumeration
-
-	ARTIndexType // ART?
+	ARTIndexType                          // ART?
+	BPlusTreeIndexType
 )
 
-func NewIndexer(typ IndexerType) Indexer {
+func NewIndexer(typ IndexerType, dirPath string, syncWrites bool) Indexer {
 	switch typ {
 	case BTreeIndexType:
-		return NewBTree(DefaultDegree) // todo set degree for btree
+		return NewBTree(DefaultDegree)
 	case ARTIndexType:
-		return nil
+		return NewAdaptiveRadixTree()
+	case BPlusTreeIndexType:
+		return NewBPlusTree(dirPath, syncWrites)
 	default:
 		panic("unsupported index type")
 	}

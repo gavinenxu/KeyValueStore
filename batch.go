@@ -1,6 +1,7 @@
 package bitcask_go
 
 import (
+	"bitcask-go/index"
 	"bitcask-go/storage"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,10 @@ type WriteBatch struct {
 }
 
 func (db *DB) NewWriteBatch(config WriteBatchConfig) *WriteBatch {
+	if db.config.IndexerType == index.BPlusTreeIndexType && !db.sequenceNumberFileExist && !db.isInitial {
+		panic("failed to open write batch: sequence number file not exist")
+	}
+
 	return &WriteBatch{
 		mu:            new(sync.Mutex),
 		db:            db,

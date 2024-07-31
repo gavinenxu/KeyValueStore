@@ -92,6 +92,10 @@ func (bt *BTree) Size() int {
 	return bt.tree.Len()
 }
 
+func (bt *BTree) Close() error {
+	return nil
+}
+
 // Less To implement Less interface in Btree lib
 func (item *Item) Less(than btree.Item) bool {
 	return bytes.Compare(item.key, than.(*Item).key) == -1
