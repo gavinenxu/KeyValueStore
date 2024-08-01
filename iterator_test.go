@@ -46,6 +46,7 @@ func TestIterator_OneRecord(t *testing.T) {
 
 	iter.Next()
 	assert.False(t, iter.Valid())
+	iter.Close()
 }
 
 func TestIterator_MultipleRecords(t *testing.T) {
@@ -91,6 +92,7 @@ func TestIterator_MultipleRecords(t *testing.T) {
 	assert.Equal(t, len(res), 2)
 	assert.Equal(t, res[0], []byte("b"))
 	assert.Equal(t, res[1], []byte("c"))
+	iter.Close()
 }
 
 func TestIterator_MultipleRecords_Reverse(t *testing.T) {
@@ -139,6 +141,7 @@ func TestIterator_MultipleRecords_Reverse(t *testing.T) {
 	assert.Equal(t, len(res), 2)
 	assert.Equal(t, res[0], []byte("b"))
 	assert.Equal(t, res[1], []byte("a"))
+	iter.Close()
 }
 
 func TestIterator_MultipleRecords_Prefix(t *testing.T) {
@@ -198,4 +201,5 @@ func TestIterator_MultipleRecords_Prefix(t *testing.T) {
 	iter.Rewind()
 	assert.NotNil(t, iter)
 	assert.False(t, iter.Valid())
+	iter.Close()
 }

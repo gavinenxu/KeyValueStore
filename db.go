@@ -1,12 +1,15 @@
 package bitcask_go
 
 import (
+	"bitcask-go/fio"
 	"bitcask-go/index"
 	"bitcask-go/storage"
 	"errors"
+	"github.com/gofrs/flock"
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,17 +17,19 @@ import (
 )
 
 type DB struct {
-	config         Config
-	mu             *sync.RWMutex
-	activeFile     *storage.DataFile            // active file to write storage
-	inactiveFiles  map[uint32]*storage.DataFile // inactive file to read storage only, <fid, *file>
-	index          index.Indexer
-	fileIds        []int  // only use for loading index
-	sequenceNumber uint64 // transaction number, increment by 1
-	isMerging      bool   // use for merging files
-
+	config                  Config
+	mu                      *sync.RWMutex
+	activeFile              *storage.DataFile            // active file to write storage
+	inactiveFiles           map[uint32]*storage.DataFile // inactive file to read storage only, <fid, *file>
+	index                   index.Indexer
+	fileIds                 []int  // only use for loading index
+	sequenceNumber          uint64 // transaction number, increment by 1
+	isMerging               bool   // use for merging files
 	sequenceNumberFileExist bool
-	isInitial               bool
+	fileLock                *flock.Flock
+	totalBytesWritten       uint
+	isOpen                  bool
+	isInitial               bool // indicate if Db was used before loading
 }
 
 func OpenDatabase(config Config) (*DB, error) {
@@ -32,21 +37,17 @@ func OpenDatabase(config Config) (*DB, error) {
 		return nil, err
 	}
 
-	var isInitial bool
 	// check if dir path exist
 	if _, err := os.Stat(config.DirPath); os.IsNotExist(err) {
-		isInitial = true
 		// create dir path for user
 		if err = os.Mkdir(config.DirPath, os.ModePerm); err != nil {
 			return nil, err
 		}
 	}
-	entries, err := os.ReadDir(config.DirPath)
+
+	fileLock, err := acquireFileLock(config)
 	if err != nil {
 		return nil, err
-	}
-	if len(entries) == 0 {
-		isInitial = true
 	}
 
 	// init db instance
@@ -55,7 +56,7 @@ func OpenDatabase(config Config) (*DB, error) {
 		mu:            new(sync.RWMutex),
 		inactiveFiles: make(map[uint32]*storage.DataFile),
 		index:         index.NewIndexer(config.IndexerType, config.DirPath, config.SyncWrites),
-		isInitial:     isInitial,
+		fileLock:      fileLock,
 	}
 
 	// load merge file
@@ -92,11 +93,26 @@ func OpenDatabase(config Config) (*DB, error) {
 		}
 	}
 
+	// finish loading, set back io type
+	if err := db.setDateFileIOType(fio.StandardFileIOType); err != nil {
+		return nil, err
+	}
+
+	// set db state
+	db.isOpen = true
+	if db.activeFile == nil {
+		db.isInitial = true
+	}
+
 	return db, nil
 }
 
 // Put To write key/value storage, key could not be empty
 func (db *DB) Put(key []byte, value []byte) error {
+	if !db.isOpen {
+		return ErrDBClosed
+	}
+
 	if len(key) == 0 {
 		return ErrKeyIsEmpty
 	}
@@ -125,6 +141,10 @@ func (db *DB) Put(key []byte, value []byte) error {
 
 // Get to get storage from key
 func (db *DB) Get(key []byte) ([]byte, error) {
+	if !db.isOpen {
+		return nil, ErrDBClosed
+	}
+
 	if len(key) == 0 {
 		return nil, ErrKeyIsEmpty
 	}
@@ -200,16 +220,26 @@ func (db *DB) Fold(fn func(k []byte, v []byte) bool) error {
 
 // Close active and inactive files
 func (db *DB) Close() error {
+	// To release file lock in any condition and release bplus tree lock
+	defer func() {
+		if err := db.fileLock.Unlock(); err != nil {
+			panic(err)
+		}
+
+		if db.config.IndexerType == index.BPlusTreeIndexType {
+			if err := db.index.Close(); err != nil {
+				panic(err)
+			}
+		}
+	}()
+
+	db.isOpen = false
 	if db.activeFile == nil {
 		return nil
 	}
 
 	db.mu.Lock()
 	defer db.mu.Unlock()
-
-	if err := db.index.Close(); err != nil {
-		return err
-	}
 
 	if err := db.writeSequenceNumber(); err != nil {
 		return err
@@ -224,6 +254,9 @@ func (db *DB) Close() error {
 			return err
 		}
 	}
+
+	db.activeFile = nil
+	db.inactiveFiles = make(map[uint32]*storage.DataFile)
 
 	return nil
 }
@@ -284,11 +317,13 @@ func (db *DB) appendLogRecord(logRecord *storage.LogRecord) (*storage.LogRecordP
 		return nil, err
 	}
 
+	db.totalBytesWritten += uint(size)
 	// check if you need to flush to db based on configuration
-	if db.config.SyncWrites {
+	if db.config.SyncWrites || (db.config.BytesToSync > 0 && db.config.BytesToSync < db.totalBytesWritten) {
 		if err := db.activeFile.Sync(); err != nil {
 			return nil, err
 		}
+		db.totalBytesWritten = 0
 	}
 
 	pos := &storage.LogRecordPos{
@@ -308,7 +343,7 @@ func (db *DB) setActiveDataFile() error {
 	}
 
 	// open a new active file
-	dataFile, err := storage.OpenDataFile(db.config.DirPath, initialFileId)
+	dataFile, err := storage.OpenDataFile(db.config.DirPath, initialFileId, fio.StandardFileIOType)
 	if err != nil {
 		return err
 	}
@@ -340,8 +375,12 @@ func (db *DB) loadDataFiles() error {
 	// load file from small number to large
 	sort.Ints(fileIds)
 
+	ioType := fio.MMapIOType
+	if !db.config.EnableMMapAtStart {
+		ioType = fio.StandardFileIOType
+	}
 	for i, fid := range fileIds {
-		dataFile, err := storage.OpenDataFile(db.config.DirPath, uint32(fid))
+		dataFile, err := storage.OpenDataFile(db.config.DirPath, uint32(fid), ioType)
 		if err != nil {
 			return err
 		}
@@ -549,6 +588,24 @@ func (db *DB) updateLogRecordIndex(logRecord *storage.LogRecord, logRecordPos *s
 	return nil
 }
 
+func (db *DB) setDateFileIOType(ioType fio.IOType) error {
+	if db.activeFile == nil {
+		return nil
+	}
+
+	if err := db.activeFile.SetIOType(db.config.DirPath, ioType); err != nil {
+		return err
+	}
+
+	for _, inactiveFile := range db.inactiveFiles {
+		if err := inactiveFile.SetIOType(db.config.DirPath, ioType); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func checkDbConfig(config Config) error {
 	if config.DirPath == "" {
 		return errors.New("database dir path is empty")
@@ -559,4 +616,17 @@ func checkDbConfig(config Config) error {
 	}
 
 	return nil
+}
+
+func acquireFileLock(config Config) (*flock.Flock, error) {
+	// lock file for process
+	fileLock := flock.New(filepath.Join(config.DirPath, fileLockName))
+	lockedByCurProc, err := fileLock.TryLock()
+	if err != nil {
+		return nil, err
+	}
+	if !lockedByCurProc {
+		return nil, ErrFileIsLockedByOtherProcess
+	}
+	return fileLock, nil
 }

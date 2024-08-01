@@ -18,7 +18,7 @@ type Indexer interface {
 	Close() error
 }
 
-type IndexerType = int8
+type IndexerType = byte
 
 const (
 	BTreeIndexType IndexerType = iota + 1 // BTree index type enumeration

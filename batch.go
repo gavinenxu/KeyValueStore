@@ -15,6 +15,10 @@ type WriteBatch struct {
 }
 
 func (db *DB) NewWriteBatch(config WriteBatchConfig) *WriteBatch {
+	if !db.isOpen {
+		panic(ErrDBClosed)
+	}
+
 	if db.config.IndexerType == index.BPlusTreeIndexType && !db.sequenceNumberFileExist && !db.isInitial {
 		panic("failed to open write batch: sequence number file not exist")
 	}
@@ -135,22 +139,6 @@ func (batch *WriteBatch) Commit() error {
 
 	return nil
 }
-
-//func (batch *WriteBatch) Rollback() error {
-//
-//}
-//
-//func (batch *WriteBatch) Reset() {
-//
-//}
-//
-//func (batch *WriteBatch) Write() error {
-//
-//}
-//
-//func (batch *WriteBatch) Flush() error {
-//
-//}
 
 func (batch *WriteBatch) generateGlobalIncrementSequenceNumber() uint64 {
 	return atomic.AddUint64(&batch.db.sequenceNumber, 1)

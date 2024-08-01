@@ -12,7 +12,11 @@ type Config struct {
 
 	SyncWrites bool // To flush storage to disk after each write
 
+	BytesToSync uint
+
 	IndexerType index.IndexerType // index type to indicate which index to use
+
+	EnableMMapAtStart bool // mmap to boost start time
 }
 
 type IteratorConfig struct {
@@ -26,10 +30,11 @@ type WriteBatchConfig struct {
 }
 
 var DefaultConfig = Config{
-	DirPath:      os.TempDir(),
-	DataFileSize: 64 * 1024 * 1024, // 64MB
-	SyncWrites:   false,
-	IndexerType:  index.BPlusTreeIndexType,
+	DirPath:           os.TempDir(),
+	DataFileSize:      64 * 1024 * 1024, // 64MB
+	SyncWrites:        false,
+	IndexerType:       index.BTreeIndexType,
+	EnableMMapAtStart: true,
 }
 
 var DefaultIteratorConfig = IteratorConfig{

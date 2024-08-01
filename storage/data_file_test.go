@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bitcask-go/fio"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
@@ -15,7 +16,7 @@ func destroyDataFile(dirPath string) {
 
 func TestOpenDataFile(t *testing.T) {
 	dir, _ := os.MkdirTemp("", "datafile")
-	dataFile, err := OpenDataFile(dir, 1)
+	dataFile, err := OpenDataFile(dir, 1, fio.StandardFileIOType)
 	defer destroyDataFile(dir)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)
@@ -23,7 +24,7 @@ func TestOpenDataFile(t *testing.T) {
 
 func TestDataFile_Close(t *testing.T) {
 	dir, _ := os.MkdirTemp("", "datafile")
-	dataFile, err := OpenDataFile(dir, 1)
+	dataFile, err := OpenDataFile(dir, 1, fio.StandardFileIOType)
 	defer destroyDataFile(dir)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)
@@ -34,7 +35,7 @@ func TestDataFile_Close(t *testing.T) {
 
 func TestDataFile_Write(t *testing.T) {
 	dir, _ := os.MkdirTemp("", "datafile")
-	dataFile, err := OpenDataFile(dir, 1)
+	dataFile, err := OpenDataFile(dir, 1, fio.StandardFileIOType)
 	defer destroyDataFile(dir)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)
@@ -45,7 +46,7 @@ func TestDataFile_Write(t *testing.T) {
 
 func TestDataFile_Sync(t *testing.T) {
 	dir, _ := os.MkdirTemp("", "datafile")
-	dataFile, err := OpenDataFile(dir, 1)
+	dataFile, err := OpenDataFile(dir, 1, fio.StandardFileIOType)
 	defer destroyDataFile(dir)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)
@@ -59,7 +60,7 @@ func TestDataFile_Sync(t *testing.T) {
 
 func TestDataFile_ReadLogRecord(t *testing.T) {
 	dir, _ := os.MkdirTemp("", "datafile")
-	dataFile, err := OpenDataFile(dir, 1)
+	dataFile, err := OpenDataFile(dir, 1, fio.StandardFileIOType)
 	defer destroyDataFile(dir)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)
@@ -101,7 +102,7 @@ func TestDataFile_ReadLogRecord(t *testing.T) {
 }
 
 func TestDataFile_ReadLogRecord_Deleted(t *testing.T) {
-	dataFile, err := OpenDataFile(os.TempDir(), 2)
+	dataFile, err := OpenDataFile(os.TempDir(), 2, fio.StandardFileIOType)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)
 
@@ -126,7 +127,7 @@ func TestDataFile_ReadLogRecord_Deleted(t *testing.T) {
 
 func TestDataFile_ReadLogRecord_WithSequenceNumber(t *testing.T) {
 	dir, _ := os.MkdirTemp("", "datafile")
-	dataFile, err := OpenDataFile(dir, 1)
+	dataFile, err := OpenDataFile(dir, 1, fio.StandardFileIOType)
 	defer destroyDataFile(dir)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)

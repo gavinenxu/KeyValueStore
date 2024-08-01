@@ -3,16 +3,17 @@ package bitcask_go
 import (
 	"bitcask-go/index"
 	"bitcask-go/utils"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"os"
+	"path"
 	"testing"
+	"time"
 )
 
 func destroyDatabase(db *DB) {
 	if db != nil {
-		if db.activeFile != nil {
-			_ = db.activeFile.Close()
-		}
+		_ = db.Close()
 		err := os.RemoveAll(db.config.DirPath)
 		if err != nil {
 			panic(err)
@@ -395,6 +396,9 @@ func TestDB_Close(t *testing.T) {
 	err = database.Close()
 	assert.Nil(t, err)
 
+	database, err = OpenDatabase(configs)
+	assert.Nil(t, err)
+	assert.NotNil(t, database)
 	err = database.Put(utils.GenerateTestKey(1), utils.GenerateTestKey(11))
 	assert.Nil(t, err)
 
@@ -403,6 +407,11 @@ func TestDB_Close(t *testing.T) {
 
 	_, err = database.Get(utils.GenerateTestKey(1))
 	assert.NotNil(t, err)
+	assert.Equal(t, ErrDBClosed, err)
+	err = database.Put(utils.GenerateTestKey(1), utils.GenerateTestKey(11))
+	assert.NotNil(t, err)
+	assert.Equal(t, ErrDBClosed, err)
+
 }
 
 func TestDB_Sync(t *testing.T) {
@@ -410,9 +419,8 @@ func TestDB_Sync(t *testing.T) {
 	dir, _ := os.MkdirTemp("", "bitcask_test_sync")
 	configs.DirPath = dir
 
-	t.Log(dir)
 	database, err := OpenDatabase(configs)
-	//defer destroyDatabase(database)
+	defer destroyDatabase(database)
 	assert.Nil(t, err)
 	assert.NotNil(t, database)
 
@@ -421,4 +429,80 @@ func TestDB_Sync(t *testing.T) {
 
 	err = database.Sync()
 	assert.Nil(t, err)
+}
+
+func TestDB_FileLock(t *testing.T) {
+	configs := DefaultConfig
+	dir, _ := os.MkdirTemp("", "bitcask_test_sync")
+	configs.DirPath = dir
+
+	database, err := OpenDatabase(configs)
+	defer destroyDatabase(database)
+	assert.Nil(t, err)
+	assert.NotNil(t, database)
+
+	// not close db
+	_, err = OpenDatabase(configs)
+	assert.NotNil(t, err)
+	assert.Equal(t, ErrFileIsLockedByOtherProcess, err)
+
+	// 2. close db
+	err = database.Close()
+	assert.Nil(t, err)
+	_, err = OpenDatabase(configs)
+	assert.Nil(t, err)
+}
+
+func TestDB_CreateData(t *testing.T) {
+	t.Skip("Only start to create testing file data")
+	configs := DefaultConfig
+	dirPath := path.Join("/tmp", "bitcask_tmp")
+	configs.DirPath = dirPath
+
+	if _, err := os.Stat(dirPath); !os.IsNotExist(err) {
+		err := os.RemoveAll(dirPath)
+		assert.Nil(t, err)
+	}
+
+	database, err := OpenDatabase(configs)
+	assert.Nil(t, err)
+
+	start := time.Now()
+	for i := 0; i < 3_000_000; i++ {
+		err = database.Put(utils.GenerateTestKey(i), utils.GenerateRandomValue(64))
+		assert.Nil(t, err)
+
+		if i%10000 == 0 {
+			elapsed := time.Since(start)
+			fmt.Printf("Funcion took %s\n", elapsed)
+		}
+	}
+	err = database.Close()
+	assert.Nil(t, err)
+}
+
+func BenchmarkDB_MMapIOWhileStart(b *testing.B) {
+	configs := DefaultConfig
+	dirPath := path.Join("/tmp", "bitcask_tmp")
+	configs.DirPath = dirPath
+	configs.EnableMMapAtStart = true
+
+	start := time.Now()
+	db, _ := OpenDatabase(configs)
+	elapsed := time.Since(start)
+	b.Logf("Total time: %s", elapsed)
+	_ = db.Close()
+}
+
+func BenchmarkDB_StandardFileIO(b *testing.B) {
+	configs := DefaultConfig
+	dirPath := path.Join("/tmp", "bitcask_tmp")
+	configs.DirPath = dirPath
+	configs.EnableMMapAtStart = false
+
+	start := time.Now()
+	db, _ := OpenDatabase(configs)
+	elapsed := time.Since(start)
+	b.Logf("Total time: %s", elapsed)
+	_ = db.Close()
 }

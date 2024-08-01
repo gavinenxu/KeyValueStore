@@ -12,3 +12,5 @@ const (
 	mergeDirNameSuffix = "-merge"
 	mergeFinishKey     = "merge_finish_key"
 )
+
+const fileLockName = "file-lock"

@@ -25,24 +25,24 @@ type DataFile struct {
 	IOManager   fio.IOManager
 }
 
-func OpenDataFile(dirPath string, fileId uint32) (*DataFile, error) {
+func OpenDataFile(dirPath string, fileId uint32, ioType fio.IOType) (*DataFile, error) {
 	fileName := GetDataFileName(dirPath, fileId)
-	return newDataFile(fileName, fileId)
+	return newDataFile(fileName, fileId, ioType)
 }
 
 func OpenHintFile(dirPath string) (*DataFile, error) {
 	fileName := GetHintFileName(dirPath)
-	return newDataFile(fileName, 0)
+	return newDataFile(fileName, 0, fio.StandardFileIOType)
 }
 
 func OpenMergeFinishFile(dirPath string) (*DataFile, error) {
 	fileName := filepath.Join(dirPath, MergeFinishFileName)
-	return newDataFile(fileName, 0)
+	return newDataFile(fileName, 0, fio.StandardFileIOType)
 }
 
 func OpenSequenceNumberFile(dirPath string) (*DataFile, error) {
 	fileName := filepath.Join(dirPath, SequenceNumberFileName)
-	return newDataFile(fileName, 0)
+	return newDataFile(fileName, 0, fio.StandardFileIOType)
 }
 
 // ReadLogRecord read log record from read offset
@@ -112,26 +112,19 @@ func (df *DataFile) Close() error {
 	return df.IOManager.Close()
 }
 
-func GetDataFileName(dirPath string, fileId uint32) string {
-	return filepath.Join(dirPath, fmt.Sprintf("%09d", fileId)+DataFileNameSuffix)
-}
-
-func GetHintFileName(dirPath string) string {
-	return filepath.Join(dirPath, HintFileName)
-}
-
-func newDataFile(fileName string, fileId uint32) (*DataFile, error) {
-	// Construct IO Manager
-	ioManager, err := fio.NewIOManager(fileName)
-	if err != nil {
-		return nil, err
+func (df *DataFile) SetIOType(dirPath string, ioType fio.IOType) error {
+	if err := df.IOManager.Close(); err != nil {
+		return err
 	}
 
-	return &DataFile{
-		FileId:      fileId,
-		WriteOffset: 0,
-		IOManager:   ioManager,
-	}, nil
+	fileName := GetDataFileName(dirPath, df.FileId)
+	IOManager, err := fio.NewIOManager(fileName, ioType)
+	if err != nil {
+		return err
+	}
+	df.IOManager = IOManager
+
+	return nil
 }
 
 func (df *DataFile) readNBytes(n int64, offset int64) ([]byte, error) {
@@ -141,4 +134,26 @@ func (df *DataFile) readNBytes(n int64, offset int64) ([]byte, error) {
 		return nil, err
 	}
 	return buf, nil
+}
+
+func GetDataFileName(dirPath string, fileId uint32) string {
+	return filepath.Join(dirPath, fmt.Sprintf("%09d", fileId)+DataFileNameSuffix)
+}
+
+func GetHintFileName(dirPath string) string {
+	return filepath.Join(dirPath, HintFileName)
+}
+
+func newDataFile(fileName string, fileId uint32, ioType fio.IOType) (*DataFile, error) {
+	// Construct IO Manager
+	ioManager, err := fio.NewIOManager(fileName, ioType)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DataFile{
+		FileId:      fileId,
+		WriteOffset: 0,
+		IOManager:   ioManager,
+	}, nil
 }

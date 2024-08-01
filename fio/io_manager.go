@@ -2,6 +2,13 @@ package fio
 
 const FileDataPermission = 0644
 
+type IOType = byte
+
+const (
+	StandardFileIOType IOType = iota + 1
+	MMapIOType
+)
+
 // IOManager interface for File IO
 type IOManager interface {
 	// Read byte from given offset
@@ -21,6 +28,13 @@ type IOManager interface {
 }
 
 // NewIOManager Initialize IOManager
-func NewIOManager(fileName string) (IOManager, error) {
-	return NewFileIOManager(fileName)
+func NewIOManager(fileName string, ioType IOType) (IOManager, error) {
+	switch ioType {
+	case StandardFileIOType:
+		return NewFileIOManager(fileName)
+	case MMapIOType:
+		return NewMMapIOManager(fileName)
+	default:
+		panic("unknown io type")
+	}
 }
