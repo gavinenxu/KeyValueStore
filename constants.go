@@ -13,4 +13,4 @@ const (
 	mergeFinishKey     = "merge_finish_key"
 )
 
-const fileLockName = "file-lock"
+const lockFileName = "lock-file"

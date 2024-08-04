@@ -4,6 +4,7 @@ import (
 	"bitcask-go/fio"
 	"bitcask-go/index"
 	"bitcask-go/storage"
+	"bitcask-go/utils"
 	"errors"
 	"github.com/gofrs/flock"
 	"io"
@@ -29,7 +30,16 @@ type DB struct {
 	fileLock                *flock.Flock
 	totalBytesWritten       uint
 	isOpen                  bool
-	isInitial               bool // indicate if Db was used before loading
+	isInitial               bool  // indicate if Db was used before loading
+	reclaimSize             int64 // total size could be reclaimed for merging
+}
+
+// Stats Database meta stats
+type Stats struct {
+	KeyNum                 uint  `json:"keyNumber"`      // number of valid key
+	DataFileNum            uint  `json:"dataFileNumber"` // number of valid data files
+	ReclaimableSizeInBytes int64 `json:"reclaimSize"`    // size of reclaimable space on disk, only count the data file size
+	TotalFileSizeInBytes   int64 `json:"diskSize"`       // total size of files on disk
 }
 
 func OpenDatabase(config Config) (*DB, error) {
@@ -69,17 +79,7 @@ func OpenDatabase(config Config) (*DB, error) {
 		return nil, err
 	}
 
-	if db.config.IndexerType != index.BPlusTreeIndexType {
-		// load hint file
-		if err := db.loadHintFile(); err != nil {
-			return nil, err
-		}
-
-		// load index for log records
-		if err := db.loadIndexFromDataFiles(); err != nil {
-			return nil, err
-		}
-	} else {
+	if db.config.IndexerType == index.BPlusTreeIndexType {
 		if err := db.loadSequenceNumberFile(); err != nil {
 			return nil, err
 		}
@@ -91,6 +91,16 @@ func OpenDatabase(config Config) (*DB, error) {
 			}
 			db.activeFile.WriteOffset = size
 		}
+	} else {
+		// load hint file
+		if err := db.loadHintFile(); err != nil {
+			return nil, err
+		}
+	}
+
+	// load index for log records
+	if err := db.loadIndexFromDataFiles(); err != nil {
+		return nil, err
 	}
 
 	// finish loading, set back io type
@@ -126,14 +136,16 @@ func (db *DB) Put(key []byte, value []byte) error {
 	}
 
 	// 1. append log record on disk if got inactive file
-	pos, err := db.appendLogRecordWithLock(logRecord)
+	pos, err := db.appendLogRecord(logRecord)
 	if err != nil {
 		return err
 	}
 
 	// 2. update index
-	if ok := db.index.Put(key, pos); !ok {
-		return ErrIndexUpdateFailed
+	oldPos := db.index.Put(key, pos)
+
+	if oldPos != nil {
+		db.reclaimSize += int64(oldPos.LogRecordSize)
 	}
 
 	return nil
@@ -162,7 +174,8 @@ func (db *DB) Delete(key []byte) error {
 		return ErrKeyIsEmpty
 	}
 
-	if logRecordPos := db.index.Get(key); logRecordPos == nil {
+	logRecordPos := db.index.Get(key)
+	if logRecordPos == nil {
 		return nil
 	}
 
@@ -173,15 +186,21 @@ func (db *DB) Delete(key []byte) error {
 	}
 
 	// write to storage file
-	_, err := db.appendLogRecordWithLock(logRecord)
+	pos, err := db.appendLogRecord(logRecord)
 	if err != nil {
 		return err
 	}
 
 	// delete key in index
-	if ok := db.index.Delete(key); !ok {
+	oldPos, ok := db.index.Delete(logRecord.Key)
+
+	if !ok {
 		return ErrIndexDeleteFailed
 	}
+	if oldPos != nil {
+		db.reclaimSize += int64(oldPos.LogRecordSize)
+	}
+	db.reclaimSize += int64(pos.LogRecordSize)
 
 	return nil
 }
@@ -277,6 +296,26 @@ func (db *DB) Sync() error {
 	return nil
 }
 
+func (db *DB) Stats() (Stats, error) {
+	var fileNum int
+	fileNum += len(db.inactiveFiles)
+	if db.activeFile != nil {
+		fileNum++
+	}
+
+	size, err := utils.DirSize(db.config.DirPath)
+	if err != nil {
+		return Stats{}, err
+	}
+
+	return Stats{
+		KeyNum:                 uint(db.index.Size()),
+		DataFileNum:            uint(fileNum),
+		ReclaimableSizeInBytes: db.reclaimSize,
+		TotalFileSizeInBytes:   size,
+	}, nil
+}
+
 func (db *DB) appendLogRecordWithLock(logRecord *storage.LogRecord) (*storage.LogRecordPos, error) {
 	// lock the properties like writeOffset for active file
 	db.mu.Lock()
@@ -327,8 +366,9 @@ func (db *DB) appendLogRecord(logRecord *storage.LogRecord) (*storage.LogRecordP
 	}
 
 	pos := &storage.LogRecordPos{
-		Fid:    db.activeFile.FileId,
-		Offset: writeOffset,
+		Fid:           db.activeFile.FileId,
+		Offset:        writeOffset,
+		LogRecordSize: uint32(size),
 	}
 	return pos, nil
 
@@ -412,12 +452,15 @@ func (db *DB) loadIndexFromDataFiles() error {
 
 	finishMergeFileName := path.Join(db.config.DirPath, storage.MergeFinishFileName)
 	var nonMergedFileId uint32 = 0
-	if _, err := os.Stat(finishMergeFileName); err == nil {
-		fileId, err := getNonMergedFileId(db.config.DirPath)
-		if err != nil {
-			return err
+	// Only update nonMergedFileId for not bplus tree index, otherwise reload all the index from data file
+	if db.config.IndexerType != index.BPlusTreeIndexType {
+		if _, err := os.Stat(finishMergeFileName); err == nil {
+			fileId, err := getNonMergedFileId(db.config.DirPath)
+			if err != nil {
+				return err
+			}
+			nonMergedFileId = fileId
 		}
-		nonMergedFileId = fileId
 	}
 
 	// traverse file id to get file content
@@ -447,8 +490,9 @@ func (db *DB) loadIndexFromDataFiles() error {
 			}
 
 			logRecordPos := &storage.LogRecordPos{
-				Fid:    dataFile.FileId,
-				Offset: offset,
+				Fid:           dataFile.FileId,
+				Offset:        offset,
+				LogRecordSize: uint32(size),
 			}
 
 			if logRecord.SequenceNumber == nonTransactionSequenceNumber {
@@ -575,16 +619,30 @@ func (db *DB) getValueByLogPosition(logRecordPos *storage.LogRecordPos) ([]byte,
 func (db *DB) updateLogRecordIndex(logRecord *storage.LogRecord, logRecordPos *storage.LogRecordPos) error {
 	// build index
 	// 1,check if log record has been deleted, if did, then delete it from index (while it's not been merged for log records)
+	var oldPos *storage.LogRecordPos
 	if logRecord.Type == storage.LogRecordDeleted {
-		if ok := db.index.Delete(logRecord.Key); !ok {
+
+		// it's possible key is not on index, but in the log record
+		// for example, two thread concurrently executes, one is deleting key and another is merging data file
+		// so the delete record will be put into a new active file if
+		maybePos := db.index.Get(logRecord.Key)
+		if maybePos == nil {
+			return nil
+		}
+
+		oldPos2, ok := db.index.Delete(logRecord.Key)
+		if !ok {
 			return ErrIndexDeleteFailed
 		}
+		oldPos = oldPos2
+		db.reclaimSize += int64(logRecordPos.LogRecordSize)
 	} else {
-		logRecordPos := &storage.LogRecordPos{Fid: logRecordPos.Fid, Offset: logRecordPos.Offset}
-		if ok := db.index.Put(logRecord.Key, logRecordPos); !ok {
-			return ErrIndexUpdateFailed
-		}
+		oldPos = db.index.Put(logRecord.Key, logRecordPos)
 	}
+	if oldPos != nil {
+		db.reclaimSize += int64(oldPos.LogRecordSize)
+	}
+
 	return nil
 }
 
@@ -615,12 +673,20 @@ func checkDbConfig(config Config) error {
 		return errors.New("database storage file size less than or equal to zero")
 	}
 
+	if config.BytesToSync < 0 {
+		return errors.New("database storage file bytes less than zero")
+	}
+
+	if config.MergeRatio < 0 || config.MergeRatio > 1 {
+		return errors.New("database merge ratio less than 0 or greater than 1")
+	}
+
 	return nil
 }
 
 func acquireFileLock(config Config) (*flock.Flock, error) {
 	// lock file for process
-	fileLock := flock.New(filepath.Join(config.DirPath, fileLockName))
+	fileLock := flock.New(filepath.Join(config.DirPath, lockFileName))
 	lockedByCurProc, err := fileLock.TryLock()
 	if err != nil {
 		return nil, err

@@ -51,13 +51,18 @@ func (bPlusTree *BPlusTree) Get(key []byte) *storage.LogRecordPos {
 	return pos
 }
 
-func (bPlusTree *BPlusTree) Put(key []byte, pos *storage.LogRecordPos) bool {
+func (bPlusTree *BPlusTree) Put(key []byte, pos *storage.LogRecordPos) *storage.LogRecordPos {
 	if key == nil {
-		return false
+		return nil
 	}
 
+	var oldPos *storage.LogRecordPos
 	err := bPlusTree.tree.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(BPTreeBucketName)
+		oldItem := b.Get(key)
+		if len(oldItem) > 0 {
+			oldPos, _ = storage.DecodeLogRecordPosition(oldItem)
+		}
 		posBuf, _ := storage.EncodeLogRecordPosition(pos)
 		return b.Put(key, posBuf)
 	})
@@ -65,20 +70,20 @@ func (bPlusTree *BPlusTree) Put(key []byte, pos *storage.LogRecordPos) bool {
 		panic("failed to put index: " + err.Error())
 	}
 
-	return true
+	return oldPos
 }
 
-func (bPlusTree *BPlusTree) Delete(key []byte) bool {
+func (bPlusTree *BPlusTree) Delete(key []byte) (*storage.LogRecordPos, bool) {
 	if key == nil {
-		return false
+		return nil, false
 	}
 
-	var deleted bool
+	var oldPos *storage.LogRecordPos
 	err := bPlusTree.tree.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(BPTreeBucketName)
-		val := b.Get(key)
-		if len(val) > 0 {
-			deleted = true
+		oldItem := b.Get(key)
+		if len(oldItem) > 0 {
+			oldPos, _ = storage.DecodeLogRecordPosition(oldItem)
 			return b.Delete(key)
 		}
 		return nil
@@ -87,7 +92,7 @@ func (bPlusTree *BPlusTree) Delete(key []byte) bool {
 		panic("failed to delete index: " + err.Error())
 	}
 
-	return deleted
+	return oldPos, oldPos != nil
 }
 
 func (bPlusTree *BPlusTree) Size() int {

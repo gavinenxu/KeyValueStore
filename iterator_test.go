@@ -21,6 +21,7 @@ func TestDB_NewIterator(t *testing.T) {
 	iter := database.NewIterator(DefaultIteratorConfig)
 	assert.NotNil(t, iter)
 	assert.False(t, iter.Valid())
+	iter.Close()
 }
 
 func TestIterator_OneRecord(t *testing.T) {

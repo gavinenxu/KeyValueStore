@@ -299,21 +299,23 @@ func TestGetLogRecordCRC_LargeSequenceNumber(t *testing.T) {
 // Test Encode/Decode Log position
 func TestEncodeLogRecordPosition(t *testing.T) {
 	pos := &LogRecordPos{
-		Fid:    128,
-		Offset: 256,
+		Fid:           128,
+		Offset:        256,
+		LogRecordSize: 10,
 	}
 
 	encodedPos, size := EncodeLogRecordPosition(pos)
 	assert.NotNil(t, encodedPos)
 	assert.Greater(t, size, 0)
-	assert.Equal(t, []byte{128, 2, 128, 4}, encodedPos)
+	assert.Equal(t, []byte{128, 2, 128, 4, 20}, encodedPos)
 }
 
 func TestDecodeLogRecordPosition(t *testing.T) {
-	buf := []byte{128, 2, 128, 4}
+	buf := []byte{128, 2, 128, 4, 20}
 	pos, size := DecodeLogRecordPosition(buf)
 	assert.NotNil(t, pos)
 	assert.Equal(t, uint32(128), pos.Fid)
 	assert.Equal(t, int64(256), pos.Offset)
-	assert.Equal(t, 4, size)
+	assert.Equal(t, uint32(10), pos.LogRecordSize)
+	assert.Equal(t, 5, size)
 }

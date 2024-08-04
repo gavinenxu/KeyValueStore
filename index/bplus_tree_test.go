@@ -14,7 +14,7 @@ func TestBPlusTree_Get_NilKey(t *testing.T) {
 	bpt := NewBPlusTree(dirPath, true)
 
 	res := bpt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
-	assert.False(t, res)
+	assert.Nil(t, res)
 
 	pos := bpt.Get(nil)
 	assert.Nil(t, pos)
@@ -61,7 +61,7 @@ func TestBPlusTree_Put_NilKey(t *testing.T) {
 	bpt := NewBPlusTree(dirPath, true)
 
 	res := bpt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
-	assert.False(t, res)
+	assert.Nil(t, res)
 	assert.Equal(t, 0, bpt.Size())
 }
 
@@ -72,18 +72,27 @@ func TestBPlusTree_Put_NormalKey(t *testing.T) {
 	bpt := NewBPlusTree(dirPath, true)
 
 	res := bpt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
-	assert.True(t, res)
+	assert.Nil(t, res)
 	assert.Equal(t, 1, bpt.Size())
 	pos := bpt.Get([]byte("123"))
 	assert.Equal(t, uint32(1), pos.Fid)
 	assert.Equal(t, int64(10), pos.Offset)
 
 	res = bpt.Put([]byte("456"), &storage.LogRecordPos{Fid: 2, Offset: 20})
-	assert.True(t, res)
+	assert.Nil(t, res)
 	assert.Equal(t, 2, bpt.Size())
 	pos = bpt.Get([]byte("456"))
 	assert.Equal(t, uint32(2), pos.Fid)
 	assert.Equal(t, int64(20), pos.Offset)
+
+	res = bpt.Put([]byte("123"), &storage.LogRecordPos{Fid: 3, Offset: 30})
+	assert.NotNil(t, res)
+	assert.Equal(t, uint32(1), res.Fid)
+	assert.Equal(t, int64(10), res.Offset)
+	assert.Equal(t, 2, bpt.Size())
+	pos = bpt.Get([]byte("123"))
+	assert.Equal(t, uint32(3), pos.Fid)
+	assert.Equal(t, int64(30), pos.Offset)
 }
 
 func TestBPlusTree_Delete_NilKey(t *testing.T) {
@@ -93,11 +102,12 @@ func TestBPlusTree_Delete_NilKey(t *testing.T) {
 	bpt := NewBPlusTree(dirPath, true)
 
 	res := bpt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
-	assert.False(t, res)
+	assert.Nil(t, res)
 	assert.Equal(t, 0, bpt.Size())
 
-	res = bpt.Delete(nil)
-	assert.False(t, res)
+	res, ok := bpt.Delete(nil)
+	assert.False(t, ok)
+	assert.Nil(t, res)
 	assert.Equal(t, 0, bpt.Size())
 }
 
@@ -108,10 +118,13 @@ func TestBPlusTree_Delete_NormalKey(t *testing.T) {
 	bpt := NewBPlusTree(dirPath, true)
 
 	res := bpt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
-	assert.True(t, res)
+	assert.Nil(t, res)
 
-	res = bpt.Delete([]byte("123"))
-	assert.True(t, res)
+	res, ok := bpt.Delete([]byte("123"))
+	assert.True(t, ok)
+	assert.NotNil(t, res)
+	assert.Equal(t, uint32(1), res.Fid)
+	assert.Equal(t, int64(10), res.Offset)
 	assert.Equal(t, 0, bpt.Size())
 }
 

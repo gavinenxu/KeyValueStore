@@ -41,8 +41,9 @@ type LogRecord struct {
 
 // LogRecordPos To record the storage position on disks
 type LogRecordPos struct {
-	Fid    uint32 // File descriptor
-	Offset int64
+	Fid           uint32 // File descriptor
+	Offset        int64
+	LogRecordSize uint32 // LogRecordSize In Byte
 }
 
 // LogRecordPositionPair to store log record position in transaction
@@ -129,10 +130,11 @@ func getLogRecordCRC(logRecord *LogRecord, headerWithoutCRC []byte) uint32 {
 }
 
 func EncodeLogRecordPosition(pos *LogRecordPos) ([]byte, int) {
-	buf := make([]byte, binary.MaxVarintLen32+binary.MaxVarintLen64)
+	buf := make([]byte, binary.MaxVarintLen32*2+binary.MaxVarintLen64)
 	var index = 0
 	index += binary.PutVarint(buf[index:], int64(pos.Fid))
 	index += binary.PutVarint(buf[index:], pos.Offset)
+	index += binary.PutVarint(buf[index:], int64(pos.LogRecordSize))
 
 	return buf[:index], index
 }
@@ -145,7 +147,10 @@ func DecodeLogRecordPosition(buf []byte) (*LogRecordPos, int) {
 	offset, n := binary.Varint(buf[index:])
 	index += n
 
-	return &LogRecordPos{Fid: uint32(fid), Offset: offset}, index
+	logRecordSize, n := binary.Varint(buf[index:])
+	index += n
+
+	return &LogRecordPos{Fid: uint32(fid), Offset: offset, LogRecordSize: uint32(logRecordSize)}, index
 }
 
 // minBytesNeededForSequenceNumber set at least 1 byte, even if the sequence number is 0

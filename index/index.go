@@ -9,9 +9,9 @@ type Indexer interface {
 	// Get index position on disk
 	Get(key []byte) *storage.LogRecordPos
 	// Put Insert index position on disk
-	Put(key []byte, pos *storage.LogRecordPos) bool
+	Put(key []byte, pos *storage.LogRecordPos) *storage.LogRecordPos
 	// Delete Remove index position on disk
-	Delete(key []byte) bool
+	Delete(key []byte) (*storage.LogRecordPos, bool)
 	// Iterator indexer iterator
 	Iterator(reverse bool) Iterator
 	Size() int

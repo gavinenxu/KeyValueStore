@@ -506,3 +506,47 @@ func BenchmarkDB_StandardFileIO(b *testing.B) {
 	b.Logf("Total time: %s", elapsed)
 	_ = db.Close()
 }
+
+func TestDB_Stats(t *testing.T) {
+	configs := DefaultConfig
+	dir, _ := os.MkdirTemp("", "bitcask_test_sync")
+	configs.DirPath = dir
+
+	database, err := OpenDatabase(configs)
+	defer destroyDatabase(database)
+	assert.Nil(t, err)
+	assert.NotNil(t, database)
+
+	n := 10
+	for i := 0; i < n; i++ {
+		err := database.Put(utils.GenerateTestKey(i), utils.GenerateRandomValue(64))
+		assert.Nil(t, err)
+	}
+
+	stats, err := database.Stats()
+	assert.Nil(t, err)
+	assert.Equal(t, uint(n), stats.KeyNum)
+	assert.Greater(t, stats.DataFileNum, uint(0))
+	assert.Equal(t, int64(0), stats.ReclaimableSizeInBytes)
+	assert.Greater(t, stats.TotalFileSizeInBytes, int64(0))
+	t.Log(stats)
+
+	for i := 0; i < n; i++ {
+		err := database.Delete(utils.GenerateTestKey(i))
+		assert.Nil(t, err)
+	}
+
+	stats2, err := database.Stats()
+	assert.Nil(t, err)
+	assert.Equal(t, uint(0), stats2.KeyNum)
+	assert.Greater(t, stats2.DataFileNum, uint(0))
+	assert.Equal(t, stats.DataFileNum, stats2.DataFileNum)
+	assert.Greater(t, stats2.ReclaimableSizeInBytes, int64(n))
+	if configs.IndexerType == index.BPlusTreeIndexType {
+		assert.Greater(t, stats2.TotalFileSizeInBytes, stats2.ReclaimableSizeInBytes)
+	} else {
+		assert.Equal(t, stats2.TotalFileSizeInBytes, stats2.ReclaimableSizeInBytes)
+	}
+
+	t.Log(stats2)
+}

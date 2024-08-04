@@ -17,6 +17,8 @@ type Config struct {
 	IndexerType index.IndexerType // index type to indicate which index to use
 
 	EnableMMapAtStart bool // mmap to boost start time
+
+	MergeRatio float32 // ratio to define in which threshold should start merging
 }
 
 type IteratorConfig struct {
@@ -33,8 +35,9 @@ var DefaultConfig = Config{
 	DirPath:           os.TempDir(),
 	DataFileSize:      64 * 1024 * 1024, // 64MB
 	SyncWrites:        false,
-	IndexerType:       index.BTreeIndexType,
+	IndexerType:       index.BPlusTreeIndexType,
 	EnableMMapAtStart: true,
+	MergeRatio:        0.5,
 }
 
 var DefaultIteratorConfig = IteratorConfig{

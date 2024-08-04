@@ -10,7 +10,7 @@ func TestAdaptiveRadixTree_Get_NilKey(t *testing.T) {
 	bt := NewAdaptiveRadixTree()
 
 	res := bt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
-	assert.False(t, res)
+	assert.Nil(t, res)
 
 	pos := bt.Get(nil)
 	assert.Nil(t, pos)
@@ -48,7 +48,7 @@ func TestAdaptiveRadixTree_Put_NilKey(t *testing.T) {
 	bt := NewAdaptiveRadixTree()
 
 	res := bt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
-	assert.False(t, res)
+	assert.Nil(t, res)
 	assert.Equal(t, 0, bt.Size())
 }
 
@@ -56,19 +56,26 @@ func TestAdaptiveRadixTree_Put_NormalKey(t *testing.T) {
 	bt := NewAdaptiveRadixTree()
 
 	res := bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
-	assert.True(t, res)
+	assert.Nil(t, res)
 	assert.Equal(t, 1, bt.Size())
+
+	res = bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 2, Offset: 20})
+	assert.NotNil(t, res)
+	assert.Equal(t, 1, bt.Size())
+	assert.Equal(t, uint32(1), res.Fid)
+	assert.Equal(t, int64(10), res.Offset)
 }
 
 func TestAdaptiveRadixTree_Delete_NilKey(t *testing.T) {
 	bt := NewAdaptiveRadixTree()
 
 	res := bt.Put(nil, &storage.LogRecordPos{Fid: 1, Offset: 10})
-	assert.False(t, res)
+	assert.Nil(t, res)
 	assert.Equal(t, 0, bt.Size())
 
-	res = bt.Delete(nil)
-	assert.False(t, res)
+	res, ok := bt.Delete(nil)
+	assert.False(t, ok)
+	assert.Nil(t, res)
 	assert.Equal(t, 0, bt.Size())
 }
 
@@ -76,10 +83,13 @@ func TestAdaptiveRadixTree_Delete_NormalKey(t *testing.T) {
 	bt := NewAdaptiveRadixTree()
 
 	res := bt.Put([]byte("123"), &storage.LogRecordPos{Fid: 1, Offset: 10})
-	assert.True(t, res)
+	assert.Nil(t, res)
 
-	res = bt.Delete([]byte("123"))
-	assert.True(t, res)
+	res, ok := bt.Delete([]byte("123"))
+	assert.True(t, ok)
+	assert.NotNil(t, res)
+	assert.Equal(t, uint32(1), res.Fid)
+	assert.Equal(t, int64(10), res.Offset)
 	assert.Equal(t, 0, bt.Size())
 }
 

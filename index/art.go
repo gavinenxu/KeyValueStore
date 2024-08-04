@@ -37,28 +37,32 @@ func (art *AdaptiveRadixTree) Get(key []byte) *storage.LogRecordPos {
 	return pos.(*storage.LogRecordPos)
 }
 
-func (art *AdaptiveRadixTree) Put(key []byte, pos *storage.LogRecordPos) bool {
+func (art *AdaptiveRadixTree) Put(key []byte, pos *storage.LogRecordPos) *storage.LogRecordPos {
 	if key == nil {
-		return false
+		return nil
 	}
 
 	art.mu.Lock()
-	art.tree.Insert(key, pos)
+	oldItem, _ := art.tree.Insert(key, pos)
 	art.mu.Unlock()
 
-	return true
+	if oldItem == nil {
+		return nil
+	}
+
+	return oldItem.(*storage.LogRecordPos)
 }
 
-func (art *AdaptiveRadixTree) Delete(key []byte) bool {
+func (art *AdaptiveRadixTree) Delete(key []byte) (*storage.LogRecordPos, bool) {
 	if key == nil {
-		return false
+		return nil, false
 	}
 
 	art.mu.Lock()
-	_, deleted := art.tree.Delete(key)
+	oldItem, deleted := art.tree.Delete(key)
 	art.mu.Unlock()
 
-	return deleted
+	return oldItem.(*storage.LogRecordPos), deleted
 }
 
 func (art *AdaptiveRadixTree) Iterator(reverse bool) Iterator {

@@ -1,7 +1,9 @@
 package bitcask_go
 
 import (
+	"bitcask-go/index"
 	"bitcask-go/storage"
+	"bitcask-go/utils"
 	"io"
 	"os"
 	"path"
@@ -21,21 +23,42 @@ func (db *DB) Merge() error {
 		return ErrMergingFileIsInProgress
 	}
 
+	// check file stats, if want to continue merge
+	stats, err := db.Stats()
+	if err != nil || stats.TotalFileSizeInBytes == int64(0) {
+		db.mu.Unlock()
+		return err
+	}
+
+	// check ratio
+	ratio := float32(stats.ReclaimableSizeInBytes) / float32(stats.TotalFileSizeInBytes)
+	if ratio < db.config.MergeRatio {
+		db.mu.Unlock()
+		return ErrMergeRatioNotSatisfied
+	}
+
+	// check available disk size to store merge file
+	needDiskSpaceInBytes := stats.TotalFileSizeInBytes - stats.ReclaimableSizeInBytes
+	availSizeInBytes, err := utils.AvailableSizeOnDiskInBytes()
+	if uint64(needDiskSpaceInBytes) > availSizeInBytes {
+		db.mu.Unlock()
+		return ErrNotEnoughDiskSpace
+	}
+
 	db.isMerging = true
-	db.mu.Unlock()
 	defer func() {
 		db.isMerging = false
 	}()
 
-	// we ensure there is only one thread will execute the following part
-
-	// update active file
+	// update active file, this could be race condition, while other threads are updating or deleting data, and modify the active file
 	db.inactiveFiles[db.activeFile.FileId] = db.activeFile
 	if err := db.setActiveDataFile(); err != nil {
+		db.mu.Unlock()
 		return err
 	}
-
 	var nonMergeFileId uint32 = db.activeFile.FileId
+
+	db.mu.Unlock()
 
 	var needMergeFiles []*storage.DataFile
 	for _, file := range db.inactiveFiles {
@@ -57,17 +80,12 @@ func (db *DB) Merge() error {
 		return err
 	}
 
-	// todo remove prev hint file ???
-	hintFileName := storage.GetHintFileName(db.config.DirPath)
-	if _, err := os.Stat(hintFileName); err == nil {
-		if err := os.Remove(hintFileName); err != nil {
+	var hintFile *storage.DataFile
+	if db.config.IndexerType != index.BPlusTreeIndexType {
+		hintFile, err = storage.OpenHintFile(mergeDirPath)
+		if err != nil {
 			return err
 		}
-	}
-
-	hintFile, err := storage.OpenHintFile(db.config.DirPath)
-	if err != nil {
-		return err
 	}
 
 	// iterate each of need to be merged files to find the current data we're using in memory
@@ -92,29 +110,27 @@ func (db *DB) Merge() error {
 					return err
 				}
 
-				encodeLogPosRecord := getEncodeLogRecordForPosition(logRecord.Key, pos)
-				if err := hintFile.Write(encodeLogPosRecord); err != nil {
-					return err
+				if hintFile != nil {
+					encodeLogPosRecord := getEncodeLogRecordForPosition(logRecord.Key, pos)
+					if err := hintFile.Write(encodeLogPosRecord); err != nil {
+						return err
+					}
 				}
+
 			}
 
 			offset += size
 		}
 	}
 
-	if err := hintFile.Sync(); err != nil {
-		return err
-	}
-	if err := mergeDb.Close(); err != nil {
-		return err
-	}
-
-	// todo remove prev finish file ???
-	finishPrevFileName := path.Join(db.config.DirPath, storage.MergeFinishFileName)
-	if _, err := os.Stat(finishPrevFileName); err == nil {
-		if err := os.Remove(finishPrevFileName); err != nil {
+	if hintFile != nil {
+		if err := hintFile.Sync(); err != nil {
 			return err
 		}
+	}
+
+	if err := mergeDb.Close(); err != nil {
+		return err
 	}
 
 	// add the merge finish file
@@ -138,6 +154,7 @@ func (db *DB) Merge() error {
 	return nil
 }
 
+// loadMergeFile: find merge files and remove merge dir
 func (db *DB) loadMergeFile() error {
 	mergeDirPath := db.getMergeDirPath()
 
@@ -160,11 +177,11 @@ func (db *DB) loadMergeFile() error {
 	var mergeFileNames []string
 	var mergeFinished bool
 	for _, entry := range dirEntries {
+		if entry.Name() == storage.SequenceNumberFileName || entry.Name() == lockFileName {
+			continue
+		}
 		if entry.Name() == storage.MergeFinishFileName {
 			mergeFinished = true
-		}
-		if entry.Name() == storage.SequenceNumberFileName {
-			continue
 		}
 		mergeFileNames = append(mergeFileNames, entry.Name())
 	}
@@ -173,13 +190,13 @@ func (db *DB) loadMergeFile() error {
 		return nil
 	}
 
-	// 2. remove all merged data files
+	// 2. remove all inactive data files in original db dir
 	nonMergeFileId, err := getNonMergedFileId(mergeDirPath)
 	if err != nil {
 		return err
 	}
 
-	var fileId uint32 = 0
+	var fileId uint32 = initialDataFileId
 	for ; fileId < nonMergeFileId; fileId++ {
 		dataFileName := storage.GetDataFileName(db.config.DirPath, fileId)
 		if _, err := os.Stat(dataFileName); err == nil {
@@ -189,20 +206,13 @@ func (db *DB) loadMergeFile() error {
 		}
 	}
 
-	// 3. move merge file to data file directory and rename it to original data file
+	// 3. move merge file (include data file, merge finish file, hint file) to data file directory and rename it to original data file
 	for _, fileName := range mergeFileNames {
 		srcFile := path.Join(mergeDirPath, fileName)
 		dstFile := path.Join(db.config.DirPath, fileName)
 		if err := os.Rename(srcFile, dstFile); err != nil {
 			return err
 		}
-	}
-
-	// move merge finish file
-	finishFileNameSrc := path.Join(mergeDirPath, storage.MergeFinishFileName)
-	finishFileNameDst := path.Join(db.config.DirPath, storage.MergeFinishFileName)
-	if err := os.Rename(finishFileNameSrc, finishFileNameDst); err != nil {
-		return err
 	}
 
 	return nil
