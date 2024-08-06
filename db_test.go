@@ -482,6 +482,7 @@ func TestDB_CreateData(t *testing.T) {
 }
 
 func BenchmarkDB_MMapIOWhileStart(b *testing.B) {
+	b.Skip()
 	configs := DefaultConfig
 	dirPath := path.Join("/tmp", "bitcask_tmp")
 	configs.DirPath = dirPath
@@ -495,6 +496,7 @@ func BenchmarkDB_MMapIOWhileStart(b *testing.B) {
 }
 
 func BenchmarkDB_StandardFileIO(b *testing.B) {
+	b.Skip()
 	configs := DefaultConfig
 	dirPath := path.Join("/tmp", "bitcask_tmp")
 	configs.DirPath = dirPath

@@ -15,11 +15,11 @@ func init() {
 	dir, _ := os.MkdirTemp("", "bitcask_test_http")
 	configs.DirPath = dir
 
-	db, err := bitcask.OpenDatabase(configs)
+	var err error
+	database, err = bitcask.OpenDatabase(configs)
 	if err != nil {
 		panic(err)
 	}
-	database = db
 }
 
 func main() {
