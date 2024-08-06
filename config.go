@@ -35,7 +35,7 @@ var DefaultConfig = Config{
 	DirPath:           os.TempDir(),
 	DataFileSize:      64 * 1024 * 1024, // 64MB
 	SyncWrites:        false,
-	IndexerType:       index.BPlusTreeIndexType,
+	IndexerType:       index.BTreeIndexType,
 	EnableMMapAtStart: true,
 	MergeRatio:        0.5,
 }

@@ -550,3 +550,46 @@ func TestDB_Stats(t *testing.T) {
 
 	t.Log(stats2)
 }
+
+func TestDB_Backup(t *testing.T) {
+	configs := DefaultConfig
+	dir, _ := os.MkdirTemp("", "bitcask_test_backup")
+	configs.DirPath = dir
+
+	database, err := OpenDatabase(configs)
+	defer destroyDatabase(database)
+	assert.Nil(t, err)
+	assert.NotNil(t, database)
+
+	n := 10
+	for i := 0; i < n; i++ {
+		err := database.Put(utils.GenerateTestKey(i), utils.GenerateRandomValue(64))
+		assert.Nil(t, err)
+	}
+
+	// backup
+	dir2, _ := os.MkdirTemp("", "bitcask_test_backup2")
+	err = database.Backup(dir2)
+	assert.Nil(t, err)
+
+	// open new db to check
+	configs2 := DefaultConfig
+	configs2.DirPath = dir2
+
+	database2, err := OpenDatabase(configs2)
+	defer destroyDatabase(database2)
+	assert.Nil(t, err)
+	assert.NotNil(t, database2)
+
+	for i := 0; i < n; i++ {
+		key := utils.GenerateTestKey(i)
+		val1, err := database.Get(key)
+		assert.Nil(t, err)
+
+		val2, err := database2.Get(key)
+		assert.Nil(t, err)
+
+		assert.Equal(t, val1, val2)
+	}
+
+}

@@ -316,6 +316,13 @@ func (db *DB) Stats() (Stats, error) {
 	}, nil
 }
 
+func (db *DB) Backup(path string) error {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	return utils.CopyDirWithFiles(db.config.DirPath, path, []string{lockFileName})
+}
+
 func (db *DB) appendLogRecordWithLock(logRecord *storage.LogRecord) (*storage.LogRecordPos, error) {
 	// lock the properties like writeOffset for active file
 	db.mu.Lock()
