@@ -176,7 +176,7 @@ func (db *DB) Delete(key []byte) error {
 
 	logRecordPos := db.index.Get(key)
 	if logRecordPos == nil {
-		return nil
+		return ErrKeyNotFound
 	}
 
 	logRecord := &storage.LogRecord{

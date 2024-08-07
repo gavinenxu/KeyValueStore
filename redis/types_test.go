@@ -155,3 +155,96 @@ func TestRedis_StringType(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, typ, "string")
 }
+
+func TestRedis_HSet(t *testing.T) {
+	configs := bitcask.DefaultConfig
+	dir, _ := os.MkdirTemp("", "redis-hash-set")
+	configs.DirPath = dir
+
+	dataStruct, err := NewRedisDataStruct(configs)
+	defer destroyRedis(dataStruct, dir)
+	assert.NotNil(t, dataStruct)
+	assert.Nil(t, err)
+
+	val1 := utils.GenerateRandomValue(1 << 3)
+	ok1, err := dataStruct.HSet(utils.GenerateTestKey(1), []byte("field1"), val1)
+	assert.Nil(t, err)
+	assert.True(t, ok1)
+
+	val2 := utils.GenerateRandomValue(1 << 3)
+	ok2, err := dataStruct.HSet(utils.GenerateTestKey(1), []byte("field1"), val2)
+	assert.Nil(t, err)
+	assert.False(t, ok2)
+}
+
+func TestRedis_HGet(t *testing.T) {
+	configs := bitcask.DefaultConfig
+	dir, _ := os.MkdirTemp("", "redis-hash-set")
+	configs.DirPath = dir
+
+	dataStruct, err := NewRedisDataStruct(configs)
+	defer destroyRedis(dataStruct, dir)
+	assert.NotNil(t, dataStruct)
+	assert.Nil(t, err)
+
+	val1 := utils.GenerateRandomValue(1 << 3)
+	ok1, err := dataStruct.HSet(utils.GenerateTestKey(1), []byte("field1"), val1)
+	assert.Nil(t, err)
+	assert.True(t, ok1)
+
+	data1, err := dataStruct.HGet(utils.GenerateTestKey(1), []byte("field1"))
+	assert.Nil(t, err)
+	assert.Equal(t, val1, data1)
+
+	val2 := utils.GenerateRandomValue(1 << 3)
+	ok2, err := dataStruct.HSet(utils.GenerateTestKey(1), []byte("field1"), val2)
+	assert.Nil(t, err)
+	assert.False(t, ok2)
+
+	data2, err := dataStruct.HGet(utils.GenerateTestKey(1), []byte("field1"))
+	assert.Nil(t, err)
+	assert.Equal(t, val2, data2)
+
+	// not exist data
+	_, err = dataStruct.HGet(utils.GenerateTestKey(1), []byte("field-not-exist"))
+	assert.NotNil(t, err)
+	assert.Equal(t, bitcask.ErrKeyNotFound, err)
+}
+
+func TestRedis_HDel(t *testing.T) {
+	configs := bitcask.DefaultConfig
+	dir, _ := os.MkdirTemp("", "redis-hash-set")
+	configs.DirPath = dir
+
+	dataStruct, err := NewRedisDataStruct(configs)
+	defer destroyRedis(dataStruct, dir)
+	assert.NotNil(t, dataStruct)
+	assert.Nil(t, err)
+
+	val1 := utils.GenerateRandomValue(1 << 3)
+	ok1, err := dataStruct.HSet(utils.GenerateTestKey(1), []byte("field1"), val1)
+	assert.Nil(t, err)
+	assert.True(t, ok1)
+
+	data1, err := dataStruct.HGet(utils.GenerateTestKey(1), []byte("field1"))
+	assert.Nil(t, err)
+	assert.Equal(t, val1, data1)
+
+	ok2, err := dataStruct.HDel(utils.GenerateTestKey(1), []byte("field1"))
+	assert.Nil(t, err)
+	assert.True(t, ok2)
+
+	val2, err := dataStruct.HGet(utils.GenerateTestKey(1), []byte("field1"))
+	assert.Nil(t, err)
+	assert.Nil(t, val2)
+
+	// delete a deleted key
+	ok2, err = dataStruct.HDel(utils.GenerateTestKey(1), []byte("field1"))
+	assert.Nil(t, err)
+	assert.False(t, ok2)
+
+	//	key not exist
+	ok3, err := dataStruct.HDel(utils.GenerateTestKey(1), []byte("field-not-exist"))
+	assert.False(t, ok3)
+	assert.Nil(t, err)
+}

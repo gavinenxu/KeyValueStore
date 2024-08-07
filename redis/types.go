@@ -96,6 +96,102 @@ func (rds *RedisDataStruct) Get(key []byte) ([]byte, error) {
 	return encValue[index:], nil
 }
 
+// -------------------> Redis Hash <-----------------------------
+// Hash store metadata, which indicates the relation for the key filed and value, key -> metadata -> value
+
+// HSet return true if not exist the encoded hash key and error
+// To store, [key, metadata], [encHashKey (key+version+filed), value]
+func (rds *RedisDataStruct) HSet(key, field, value []byte) (bool, error) {
+	meta, err := rds.findMetadata(key, Hash)
+	if err != nil {
+		return false, err
+	}
+
+	encHashKey := encodeHashInternalKey(key, meta.version, field)
+
+	var notExist bool
+	if _, err = rds.db.Get(encHashKey); err != nil {
+		if errors.Is(err, bitcask.ErrKeyNotFound) {
+			notExist = true
+		} else {
+			return false, err
+		}
+	}
+
+	wb := rds.db.NewWriteBatch(bitcask.DefaultWriteBatchConfig)
+
+	// update meta
+	if notExist {
+		meta.size++
+		_ = wb.Put(key, encodeMetadata(meta))
+	}
+	// update value
+	_ = wb.Put(encHashKey, value)
+	if err := wb.Commit(); err != nil {
+		return false, err
+	}
+
+	return notExist, nil
+}
+
+func (rds *RedisDataStruct) HGet(key, field []byte) ([]byte, error) {
+	if key == nil || field == nil {
+		return nil, nil
+	}
+
+	meta, err := rds.findMetadata(key, Hash)
+	if err != nil {
+		return nil, err
+	}
+	// no value is set
+	if meta.size == 0 {
+		return nil, nil
+	}
+	// expire
+	if meta.expireAt != 0 && meta.expireAt < time.Now().UnixNano() {
+		return nil, ErrKeyIsExpired
+	}
+
+	encHashKey := encodeHashInternalKey(key, meta.version, field)
+	return rds.db.Get(encHashKey)
+}
+
+func (rds *RedisDataStruct) HDel(key, field []byte) (bool, error) {
+	if key == nil || field == nil {
+		return false, nil
+	}
+
+	meta, err := rds.findMetadata(key, Hash)
+	if err != nil {
+		return false, err
+	}
+	if meta.size == 0 {
+		return false, nil
+	}
+
+	encHashKey := encodeHashInternalKey(key, meta.version, field)
+	if _, err = rds.db.Get(encHashKey); err != nil {
+		if errors.Is(err, bitcask.ErrKeyNotFound) {
+			return true, nil
+		}
+		return false, err
+	}
+
+	// update meta then delete
+	wb := rds.db.NewWriteBatch(bitcask.DefaultWriteBatchConfig)
+	meta.size--
+	// repoint to the previous metadata key
+	_ = wb.Put(key, encodeMetadata(meta))
+	_ = wb.Delete(encHashKey)
+	if err := wb.Commit(); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// -------------------> Redis Generic methods <-----------------------------
+
 func (rds *RedisDataStruct) Del(key []byte) error {
 	if key == nil {
 		return nil
@@ -126,4 +222,34 @@ func (rds *RedisDataStruct) Type(key []byte) (string, error) {
 	}
 
 	return "", nil
+}
+
+func (rds *RedisDataStruct) findMetadata(key []byte, redisDataType RedisDataType) (*metadata, error) {
+	metaBuf, err := rds.db.Get(key)
+	if err != nil {
+		if errors.Is(err, bitcask.ErrKeyNotFound) {
+			m := &metadata{
+				dataType: redisDataType,
+				expireAt: 0,
+				version:  time.Now().UnixNano(),
+				size:     0,
+			}
+			if redisDataType == List {
+				m.head = initialListMidPoint
+				m.tail = initialListMidPoint
+			}
+			return m, nil
+
+		}
+		return nil, err
+	}
+
+	m := decodeMetadata(metaBuf)
+	if m.dataType != redisDataType {
+		return nil, ErrWrongTypeOperation
+	} else if m.expireAt != 0 && m.expireAt <= time.Now().UnixNano() {
+		return nil, ErrKeyIsExpired
+	}
+
+	return m, nil
 }

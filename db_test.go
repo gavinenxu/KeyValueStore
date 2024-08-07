@@ -281,7 +281,8 @@ func TestDB_Delete_KeyNotExist(t *testing.T) {
 	assert.NotNil(t, database)
 
 	err = database.Delete([]byte("not_exist_key"))
-	assert.Nil(t, err)
+	assert.NotNil(t, err)
+	assert.Equal(t, ErrKeyNotFound, err)
 }
 
 func TestDB_Delete_KeyIsEmpty(t *testing.T) {
