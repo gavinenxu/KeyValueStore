@@ -269,6 +269,95 @@ func (rds *RedisDataStruct) SRem(key, member []byte) (bool, error) {
 	return true, nil
 }
 
+// -------------------> Redis List <-----------------------------
+
+// LPush return current size
+func (rds *RedisDataStruct) LPush(key, element []byte) (uint32, error) {
+	return rds.push(key, element, true)
+}
+
+func (rds *RedisDataStruct) RPush(key, element []byte) (uint32, error) {
+	return rds.push(key, element, false)
+}
+
+func (rds *RedisDataStruct) LPop(key []byte) ([]byte, error) {
+	return rds.pop(key, true)
+}
+
+func (rds *RedisDataStruct) RPop(key []byte) ([]byte, error) {
+	return rds.pop(key, false)
+}
+
+func (rds *RedisDataStruct) push(key, element []byte, isLeft bool) (uint32, error) {
+	if key == nil || element == nil {
+		return 0, nil
+	}
+
+	meta, err := rds.getMetadata(key, List)
+	if err != nil {
+		return 0, err
+	}
+
+	var index uint64
+	if isLeft {
+		index = meta.head - 1
+		meta.head--
+	} else {
+		index = meta.tail
+		meta.tail++
+	}
+
+	encListKey := encodeListInternalKey(key, meta.version, index)
+
+	wb := rds.db.NewWriteBatch(bitcask.DefaultWriteBatchConfig)
+	// update meta
+	meta.size++
+	_ = wb.Put(key, encodeMetadata(meta))
+	_ = wb.Put(encListKey, element)
+	if err := wb.Commit(); err != nil {
+		return 0, err
+	}
+
+	return meta.size, nil
+}
+
+func (rds *RedisDataStruct) pop(key []byte, isLeft bool) ([]byte, error) {
+	if key == nil {
+		return nil, nil
+	}
+
+	meta, err := rds.getMetadata(key, List)
+	if err != nil {
+		return nil, err
+	}
+	if meta.size == 0 {
+		return nil, nil
+	}
+
+	var index uint64
+	if isLeft {
+		index = meta.head
+		meta.head++
+	} else {
+		index = meta.tail - 1
+		meta.tail--
+	}
+
+	encListKey := encodeListInternalKey(key, meta.version, index)
+	val, err := rds.db.Get(encListKey)
+	if err != nil {
+		return nil, err
+	}
+
+	meta.size--
+	if err := rds.db.Put(key, encodeMetadata(meta)); err != nil {
+		return nil, err
+	}
+
+	return val, nil
+
+}
+
 // -------------------> Redis Generic methods <-----------------------------
 
 func (rds *RedisDataStruct) Del(key []byte) error {

@@ -107,3 +107,24 @@ func encodeSetInternalKey(key []byte, version int64, member []byte) []byte {
 
 	return buf
 }
+
+type listInternalKey struct {
+	key     []byte
+	version int64
+	index   uint64
+}
+
+func encodeListInternalKey(key []byte, version int64, index uint64) []byte {
+	buf := make([]byte, len(key)+8*2)
+
+	var idx = 0
+	copy(buf[idx:idx+len(key)], key)
+	idx += len(key)
+
+	binary.LittleEndian.PutUint64(buf[idx:idx+8], uint64(version))
+	index += 8
+
+	binary.LittleEndian.PutUint64(buf[idx:idx+8], index)
+
+	return buf
+}

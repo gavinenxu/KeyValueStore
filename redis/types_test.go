@@ -331,3 +331,61 @@ func TestRedis_SRem(t *testing.T) {
 	assert.Nil(t, err)
 	assert.False(t, ok4)
 }
+
+func TestRedis_LPop(t *testing.T) {
+	configs := bitcask.DefaultConfig
+	dir, _ := os.MkdirTemp("", "redis-list")
+	configs.DirPath = dir
+
+	dataStruct, err := NewRedisDataStruct(configs)
+	defer destroyRedis(dataStruct, dir)
+	assert.NotNil(t, dataStruct)
+	assert.Nil(t, err)
+
+	val1 := []byte("e1")
+	s1, err := dataStruct.LPush(utils.GenerateTestKey(1), val1)
+	assert.Nil(t, err)
+	assert.Equal(t, uint32(1), s1)
+
+	val2 := []byte("e2")
+	s2, err := dataStruct.LPush(utils.GenerateTestKey(1), val2)
+	assert.Nil(t, err)
+	assert.Equal(t, uint32(2), s2)
+
+	val3, err := dataStruct.LPop(utils.GenerateTestKey(1))
+	assert.Nil(t, err)
+	assert.Equal(t, val2, val3)
+
+	val4, err := dataStruct.LPop(utils.GenerateTestKey(1))
+	assert.Nil(t, err)
+	assert.Equal(t, val1, val4)
+}
+
+func TestRedis_RPop(t *testing.T) {
+	configs := bitcask.DefaultConfig
+	dir, _ := os.MkdirTemp("", "redis-list")
+	configs.DirPath = dir
+
+	dataStruct, err := NewRedisDataStruct(configs)
+	defer destroyRedis(dataStruct, dir)
+	assert.NotNil(t, dataStruct)
+	assert.Nil(t, err)
+
+	val1 := []byte("e1")
+	s1, err := dataStruct.RPush(utils.GenerateTestKey(1), val1)
+	assert.Nil(t, err)
+	assert.Equal(t, uint32(1), s1)
+
+	val2 := []byte("e2")
+	s2, err := dataStruct.RPush(utils.GenerateTestKey(1), val2)
+	assert.Nil(t, err)
+	assert.Equal(t, uint32(2), s2)
+
+	val3, err := dataStruct.RPop(utils.GenerateTestKey(1))
+	assert.Nil(t, err)
+	assert.Equal(t, val2, val3)
+
+	val4, err := dataStruct.RPop(utils.GenerateTestKey(1))
+	assert.Nil(t, err)
+	assert.Equal(t, val1, val4)
+}
