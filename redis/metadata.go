@@ -2,7 +2,6 @@ package redis
 
 import (
 	"encoding/binary"
-	"errors"
 	"math"
 )
 
@@ -18,10 +17,6 @@ type metadata struct {
 const maxMetadataSize = 1 + 2*binary.MaxVarintLen64 + binary.MaxVarintLen32
 const maxMetadataSizeForList = maxMetadataSize + 2*binary.MaxVarintLen64
 const initialListMidPoint = math.MaxUint64 / 2
-
-var (
-	errMetadataSizeMismatch = errors.New("metadata size mismatch")
-)
 
 func encodeMetadata(m *metadata) []byte {
 	var maxSize uint8
@@ -84,6 +79,31 @@ func encodeHashInternalKey(key []byte, version int64, field []byte) []byte {
 	binary.LittleEndian.PutUint64(buf[index:index+8], uint64(version))
 	index += 8
 	copy(buf[index:], field)
+
+	return buf
+}
+
+type setInternalKey struct {
+	key     []byte
+	version int64
+	member  []byte
+}
+
+func encodeSetInternalKey(key []byte, version int64, member []byte) []byte {
+	buf := make([]byte, len(key)+8+len(member)+4)
+
+	var index = 0
+	copy(buf[index:index+len(key)], key)
+	index += len(key)
+
+	binary.LittleEndian.PutUint64(buf[index:index+8], uint64(version))
+	index += 8
+
+	copy(buf[index:index+len(member)], member)
+	index += len(member)
+
+	// add member size
+	binary.LittleEndian.PutUint32(buf[index:], uint32(len(member)))
 
 	return buf
 }

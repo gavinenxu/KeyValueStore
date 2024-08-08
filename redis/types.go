@@ -102,7 +102,7 @@ func (rds *RedisDataStruct) Get(key []byte) ([]byte, error) {
 // HSet return true if not exist the encoded hash key and error
 // To store, [key, metadata], [encHashKey (key+version+filed), value]
 func (rds *RedisDataStruct) HSet(key, field, value []byte) (bool, error) {
-	meta, err := rds.findMetadata(key, Hash)
+	meta, err := rds.getMetadata(key, Hash)
 	if err != nil {
 		return false, err
 	}
@@ -139,7 +139,7 @@ func (rds *RedisDataStruct) HGet(key, field []byte) ([]byte, error) {
 		return nil, nil
 	}
 
-	meta, err := rds.findMetadata(key, Hash)
+	meta, err := rds.getMetadata(key, Hash)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (rds *RedisDataStruct) HDel(key, field []byte) (bool, error) {
 		return false, nil
 	}
 
-	meta, err := rds.findMetadata(key, Hash)
+	meta, err := rds.getMetadata(key, Hash)
 	if err != nil {
 		return false, err
 	}
@@ -183,6 +183,85 @@ func (rds *RedisDataStruct) HDel(key, field []byte) (bool, error) {
 	// repoint to the previous metadata key
 	_ = wb.Put(key, encodeMetadata(meta))
 	_ = wb.Delete(encHashKey)
+	if err := wb.Commit(); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// -------------------> Redis Set <-----------------------------
+
+func (rds *RedisDataStruct) SAdd(key, member []byte) (bool, error) {
+	if key == nil || member == nil {
+		return false, nil
+	}
+
+	meta, err := rds.getMetadata(key, Set)
+	if err != nil {
+		return false, err
+	}
+
+	var ok bool
+	encSetKey := encodeSetInternalKey(key, meta.version, member)
+	if _, err := rds.db.Get(encSetKey); errors.Is(err, bitcask.ErrKeyNotFound) {
+		meta.size++
+
+		wb := rds.db.NewWriteBatch(bitcask.DefaultWriteBatchConfig)
+		_ = wb.Put(key, encodeMetadata(meta))
+		_ = wb.Put(encSetKey, nil)
+		if err := wb.Commit(); err != nil {
+			return false, err
+		}
+		ok = true
+	}
+
+	return ok, nil
+}
+
+func (rds *RedisDataStruct) SIsMember(key, member []byte) (bool, error) {
+	if key == nil || member == nil {
+		return false, nil
+	}
+
+	meta, err := rds.getMetadata(key, Set)
+	if err != nil {
+		return false, err
+	}
+
+	encSetKey := encodeSetInternalKey(key, meta.version, member)
+	if _, err := rds.db.Get(encSetKey); err != nil {
+		if errors.Is(err, bitcask.ErrKeyNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (rds *RedisDataStruct) SRem(key, member []byte) (bool, error) {
+	if key == nil {
+		return false, nil
+	}
+
+	meta, err := rds.getMetadata(key, Set)
+	if err != nil {
+		return false, err
+	}
+
+	encSetKey := encodeSetInternalKey(key, meta.version, member)
+	if _, err := rds.db.Get(encSetKey); err != nil {
+		if errors.Is(err, bitcask.ErrKeyNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	wb := rds.db.NewWriteBatch(bitcask.DefaultWriteBatchConfig)
+	meta.size--
+	_ = wb.Put(key, encodeMetadata(meta))
+	_ = wb.Delete(encSetKey)
 	if err := wb.Commit(); err != nil {
 		return false, err
 	}
@@ -224,7 +303,7 @@ func (rds *RedisDataStruct) Type(key []byte) (string, error) {
 	return "", nil
 }
 
-func (rds *RedisDataStruct) findMetadata(key []byte, redisDataType RedisDataType) (*metadata, error) {
+func (rds *RedisDataStruct) getMetadata(key []byte, redisDataType RedisDataType) (*metadata, error) {
 	metaBuf, err := rds.db.Get(key)
 	if err != nil {
 		if errors.Is(err, bitcask.ErrKeyNotFound) {
