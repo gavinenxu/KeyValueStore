@@ -2,6 +2,7 @@ package redis
 
 import (
 	bitcask "bitcask-go"
+	"bitcask-go/utils"
 	"encoding/binary"
 	"errors"
 	"time"
@@ -267,6 +268,63 @@ func (rds *RedisDataStruct) SRem(key, member []byte) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// -------------------> Redis ZSet <-----------------------------
+
+func (rds *RedisDataStruct) ZAdd(key []byte, score float64, member []byte) (bool, error) {
+	meta, err := rds.getMetadata(key, ZSet)
+	if err != nil {
+		return false, err
+	}
+
+	encZSetKey := encodeZSetInternalKeyWithMember(key, meta.version, member)
+	scoreByte, err := rds.db.Get(encZSetKey)
+
+	var notExist bool
+	if err != nil {
+		if errors.Is(err, bitcask.ErrKeyNotFound) {
+			notExist = true
+		} else {
+			return false, err
+		}
+	} else if score == utils.BytesToFloat64(scoreByte) {
+		return false, nil
+	}
+
+	wb := rds.db.NewWriteBatch(bitcask.DefaultWriteBatchConfig)
+	if notExist {
+		meta.size++
+		_ = wb.Put(key, encodeMetadata(meta))
+	} else {
+		// delete old score key, so we could get a not duplicate score list
+		oldEncZSetKeyWithScore := encodeZSetInternalKeyWithScore(key, meta.version, utils.BytesToFloat64(scoreByte), member)
+		_ = wb.Delete(oldEncZSetKeyWithScore)
+	}
+	_ = wb.Put(encZSetKey, utils.Float64ToBytes(score))
+	_ = wb.Put(encodeZSetInternalKeyWithScore(key, meta.version, score, member), nil)
+	if err := wb.Commit(); err != nil {
+		return false, err
+	}
+
+	return notExist, nil
+}
+
+func (rds *RedisDataStruct) ZScore(key []byte, member []byte) (float64, error) {
+	meta, err := rds.getMetadata(key, ZSet)
+	if err != nil {
+		return -1.0, err
+	}
+
+	encZSetKey := encodeZSetInternalKeyWithMember(key, meta.version, member)
+	scoreByte, err := rds.db.Get(encZSetKey)
+	if err != nil {
+		if errors.Is(err, bitcask.ErrKeyNotFound) {
+			return -1.0, nil
+		}
+		return -1.0, err
+	}
+	return utils.BytesToFloat64(scoreByte), nil
 }
 
 // -------------------> Redis List <-----------------------------

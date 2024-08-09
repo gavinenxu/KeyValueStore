@@ -156,7 +156,7 @@ func TestRedis_StringType(t *testing.T) {
 	assert.Equal(t, typ, "string")
 }
 
-func TestRedis_HSet(t *testing.T) {
+func TestRedis_Hash_HSet(t *testing.T) {
 	configs := bitcask.DefaultConfig
 	dir, _ := os.MkdirTemp("", "redis-hash")
 	configs.DirPath = dir
@@ -177,7 +177,7 @@ func TestRedis_HSet(t *testing.T) {
 	assert.False(t, ok2)
 }
 
-func TestRedis_HGet(t *testing.T) {
+func TestRedis_Hash_HGet(t *testing.T) {
 	configs := bitcask.DefaultConfig
 	dir, _ := os.MkdirTemp("", "redis-hash")
 	configs.DirPath = dir
@@ -211,7 +211,7 @@ func TestRedis_HGet(t *testing.T) {
 	assert.Equal(t, bitcask.ErrKeyNotFound, err)
 }
 
-func TestRedis_HDel(t *testing.T) {
+func TestRedis_Hash_HDel(t *testing.T) {
 	configs := bitcask.DefaultConfig
 	dir, _ := os.MkdirTemp("", "redis-hash")
 	configs.DirPath = dir
@@ -249,7 +249,7 @@ func TestRedis_HDel(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func TestRedis_SAdd(t *testing.T) {
+func TestRedis_Set_SAdd(t *testing.T) {
 	configs := bitcask.DefaultConfig
 	dir, _ := os.MkdirTemp("", "redis-set")
 	configs.DirPath = dir
@@ -273,7 +273,7 @@ func TestRedis_SAdd(t *testing.T) {
 	assert.False(t, ok3)
 }
 
-func TestRedis_SIsMember(t *testing.T) {
+func TestRedis_Set_SIsMember(t *testing.T) {
 	configs := bitcask.DefaultConfig
 	dir, _ := os.MkdirTemp("", "redis-set")
 	configs.DirPath = dir
@@ -302,7 +302,7 @@ func TestRedis_SIsMember(t *testing.T) {
 	assert.False(t, ok3)
 }
 
-func TestRedis_SRem(t *testing.T) {
+func TestRedis_Set_SRem(t *testing.T) {
 	configs := bitcask.DefaultConfig
 	dir, _ := os.MkdirTemp("", "redis-set")
 	configs.DirPath = dir
@@ -332,7 +332,7 @@ func TestRedis_SRem(t *testing.T) {
 	assert.False(t, ok4)
 }
 
-func TestRedis_LPop(t *testing.T) {
+func TestRedis_List_LPop(t *testing.T) {
 	configs := bitcask.DefaultConfig
 	dir, _ := os.MkdirTemp("", "redis-list")
 	configs.DirPath = dir
@@ -361,7 +361,7 @@ func TestRedis_LPop(t *testing.T) {
 	assert.Equal(t, val1, val4)
 }
 
-func TestRedis_RPop(t *testing.T) {
+func TestRedis_List_RPop(t *testing.T) {
 	configs := bitcask.DefaultConfig
 	dir, _ := os.MkdirTemp("", "redis-list")
 	configs.DirPath = dir
@@ -388,4 +388,67 @@ func TestRedis_RPop(t *testing.T) {
 	val4, err := dataStruct.RPop(utils.GenerateTestKey(1))
 	assert.Nil(t, err)
 	assert.Equal(t, val1, val4)
+}
+
+func TestRedis_ZSet_ZAdd(t *testing.T) {
+	configs := bitcask.DefaultConfig
+	dir, _ := os.MkdirTemp("", "redis-zset")
+	configs.DirPath = dir
+
+	dataStruct, err := NewRedisDataStruct(configs)
+	defer destroyRedis(dataStruct, dir)
+	assert.NotNil(t, dataStruct)
+	assert.Nil(t, err)
+
+	ok1, err := dataStruct.ZAdd(utils.GenerateTestKey(1), 1.0, []byte("m1"))
+	assert.Nil(t, err)
+	assert.True(t, ok1)
+
+	ok2, err := dataStruct.ZAdd(utils.GenerateTestKey(1), 1.0, []byte("m2"))
+	assert.Nil(t, err)
+	assert.True(t, ok2)
+
+	ok3, err := dataStruct.ZAdd(utils.GenerateTestKey(1), 2.0, []byte("m1"))
+	assert.Nil(t, err)
+	assert.False(t, ok3)
+
+	ok4, err := dataStruct.ZAdd(utils.GenerateTestKey(1), 1.0, []byte("m1"))
+	assert.Nil(t, err)
+	assert.False(t, ok4)
+
+	ok5, err := dataStruct.ZAdd(utils.GenerateTestKey(2), 1.0, []byte("m1"))
+	assert.Nil(t, err)
+	assert.True(t, ok5)
+}
+
+func TestRedis_ZSet_ZScore(t *testing.T) {
+	configs := bitcask.DefaultConfig
+	dir, _ := os.MkdirTemp("", "redis-zset")
+	configs.DirPath = dir
+
+	dataStruct, err := NewRedisDataStruct(configs)
+	defer destroyRedis(dataStruct, dir)
+	assert.NotNil(t, dataStruct)
+	assert.Nil(t, err)
+
+	score1, err := dataStruct.ZScore(utils.GenerateTestKey(1), []byte("m1"))
+	assert.Nil(t, err)
+	assert.Equal(t, -1.0, score1)
+
+	_, err = dataStruct.ZAdd(utils.GenerateTestKey(1), 1.0, []byte("m1"))
+	assert.Nil(t, err)
+
+	_, err = dataStruct.ZAdd(utils.GenerateTestKey(1), 1.0, []byte("m2"))
+	assert.Nil(t, err)
+
+	_, err = dataStruct.ZAdd(utils.GenerateTestKey(1), 2.0, []byte("m1"))
+	assert.Nil(t, err)
+
+	score2, err := dataStruct.ZScore(utils.GenerateTestKey(1), []byte("m1"))
+	assert.Nil(t, err)
+	assert.Equal(t, 2.0, score2)
+
+	score3, err := dataStruct.ZScore(utils.GenerateTestKey(1), []byte("m2"))
+	assert.Nil(t, err)
+	assert.Equal(t, 1.0, score3)
 }
