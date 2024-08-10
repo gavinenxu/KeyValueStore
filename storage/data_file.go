@@ -67,24 +67,24 @@ func (df *DataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
 	if header == nil {
 		return nil, 0, io.EOF
 	}
-	if header.crc == 0 && header.sequenceNumberSize == 0 && header.keySize == 0 && header.valueSize == 0 {
+	if header.crc == 0 && header.keySize == 0 && header.valueSize == 0 {
 		return nil, 0, io.EOF
 	}
 
-	sequenceNumberSize, keySize, valueSize := int64(header.sequenceNumberSize), int64(header.keySize), int64(header.valueSize)
+	keySize, valueSize := int64(header.keySize), int64(header.valueSize)
 	logRecord := &LogRecord{
-		Type: header.recordType,
+		Type:           header.recordType,
+		SequenceNumber: header.sequenceNumber,
 	}
 	// read real key/value storage
-	buf, err := df.readNBytes(sequenceNumberSize+keySize+valueSize, offset+headerSize)
+	buf, err := df.readNBytes(keySize+valueSize, offset+headerSize)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	logRecord.SequenceNumber = bytesToUint64(buf[:sequenceNumberSize])
 	// Store key/value as byte[], and get it as byte[] so don't need to decode
-	logRecord.Key = buf[sequenceNumberSize : keySize+sequenceNumberSize]
-	logRecord.Value = buf[keySize+sequenceNumberSize:]
+	logRecord.Key = buf[:keySize]
+	logRecord.Value = buf[keySize:]
 
 	// verify crc
 	crc := getLogRecordCRC(logRecord, headerBuf[crcSizeInByte:headerSize])
@@ -92,7 +92,7 @@ func (df *DataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
 		return nil, 0, ErrInvalidCRC
 	}
 
-	return logRecord, headerSize + sequenceNumberSize + keySize + valueSize, nil
+	return logRecord, headerSize + keySize + valueSize, nil
 }
 
 func (df *DataFile) Write(buf []byte) error {

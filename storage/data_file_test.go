@@ -102,7 +102,9 @@ func TestDataFile_ReadLogRecord(t *testing.T) {
 }
 
 func TestDataFile_ReadLogRecord_Deleted(t *testing.T) {
-	dataFile, err := OpenDataFile(os.TempDir(), 2, fio.StandardFileIOType)
+	dir, _ := os.MkdirTemp("", "datafile")
+	dataFile, err := OpenDataFile(dir, 1, fio.StandardFileIOType)
+	defer destroyDataFile(dir)
 	assert.Nil(t, err)
 	assert.NotNil(t, dataFile)
 
