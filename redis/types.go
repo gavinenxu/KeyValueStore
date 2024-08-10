@@ -36,6 +36,10 @@ func NewRedisDataStruct(config bitcask.Config) (*RedisDataStruct, error) {
 	return &RedisDataStruct{db: database}, nil
 }
 
+func (rds *RedisDataStruct) Close() error {
+	return rds.db.Close()
+}
+
 // -------------------> Redis String <-----------------------------
 
 // Set encode type+expire+value in Value
